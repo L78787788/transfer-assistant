@@ -45,6 +45,10 @@ jobs:
 
   fuzz-harness:
     runs-on: ubuntu-latest
+    # rust-toolchain.toml 固定了 stable 1.97.1，会覆盖默认工具链；
+    # 环境变量优先级最高，用它强制 fuzz 任务使用 nightly。
+    env:
+      RUSTUP_TOOLCHAIN: nightly
     steps:
       - uses: actions/checkout@v4
       # cargo-fuzz 依赖 nightly 的 -Z 编译选项，与本地开发环境保持一致。
