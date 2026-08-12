@@ -47,7 +47,8 @@ jobs:
     runs-on: ubuntu-latest
     steps:
       - uses: actions/checkout@v4
-      - uses: dtolnay/rust-toolchain@1.97.1
+      # cargo-fuzz 依赖 nightly 的 -Z 编译选项，与本地开发环境保持一致。
+      - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
         with:
           workspaces: fuzz
@@ -75,7 +76,13 @@ jobs:
           cache: true
       - name: Install Android NDK
         shell: pwsh
-        run: sdkmanager "ndk;29.0.14206865"
+        run: |
+          $sdkRoot = if ($env:ANDROID_SDK_ROOT) { $env:ANDROID_SDK_ROOT } else { 'C:\Android\android-sdk' }
+          $sdkmanager = Get-ChildItem -Path $sdkRoot -Recurse -Filter 'sdkmanager.bat' -ErrorAction SilentlyContinue |
+            Sort-Object FullName -Descending | Select-Object -First 1
+          if (-not $sdkmanager) { throw "sdkmanager.bat not found under $sdkRoot" }
+          1..30 | ForEach-Object { 'y' } | & $sdkmanager.FullName --licenses 2>$null | Out-Null
+          & $sdkmanager.FullName "ndk;29.0.14206865"
       - name: Generate CI-only Android key
         shell: pwsh
         run: .\scripts\ensure-android-signing.ps1
