@@ -26,52 +26,66 @@ object AndroidStorageBridge {
     @Suppress("unused")
     fun prepareTargets(treeUriText: String, transferId: String, manifestJson: String): String {
         check(::context.isInitialized) { "SAF 桥尚未初始化" }
-        val treeUri = Uri.parse(treeUriText)
-        val rootId = DocumentsContract.getTreeDocumentId(treeUri)
-        val rootUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootId)
-        val entries = JSONArray(manifestJson)
-        val rootNames = linkedMapOf<String, String>()
-        val output = JSONArray()
-
-        for (index in 0 until entries.length()) {
-            val entry = entries.getJSONObject(index)
-            val relativePath = entry.getString("relative_path")
-            val segments = relativePath.split('/')
-            val sourceRoot = segments.first()
-            val targetRoot = rootNames.getOrPut(sourceRoot) {
-                uniqueChildName(rootUri, sourceRoot, entry.getBoolean("is_directory"))
-            }
-            val targetSegments = listOf(targetRoot) + segments.drop(1)
-            if (entry.getBoolean("is_directory")) {
-                ensureDirectoryPath(rootUri, targetSegments)
-                continue
-            }
-
-            val parent = ensureDirectoryPath(rootUri, targetSegments.dropLast(1))
-            val finalName = targetSegments.last()
-            val temporaryName = ".$finalName.transassist-$transferId-${entry.getString("id")}.part"
-            val existing = findChild(parent, temporaryName)
-            val temporaryUri = existing?.uri ?: DocumentsContract.createDocument(
-                context.contentResolver,
-                parent,
-                "application/octet-stream",
-                temporaryName,
-            ) ?: error("无法创建临时文档 $temporaryName")
-            val descriptor = context.contentResolver.openFileDescriptor(temporaryUri, "rw")
-                ?: error("文档提供程序没有返回写入描述符")
-            val detached = descriptor.detachFd()
-            output.put(
-                JSONObject()
-                    .put("id", entry.getString("id"))
-                    .put("fd", detached)
-                    .put("temporary_uri", temporaryUri.toString())
-                    .put("final_name", finalName)
-                    .put("final_path", targetSegments.joinToString("/"))
-                    .put("existed", existing != null)
-                    .put("random_access", isRandomAccess(detached)),
-            )
+        val opened = mutableListOf<Int>()
+        fun closeOpened() {
+            opened.forEach { fd -> runCatching { Os.close(fd) } }
         }
-        return output.toString()
+        try {
+            val treeUri = Uri.parse(treeUriText)
+            val rootId = DocumentsContract.getTreeDocumentId(treeUri)
+            val rootUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, rootId)
+            val entries = JSONArray(manifestJson)
+            val rootNames = linkedMapOf<String, String>()
+            val output = JSONArray()
+
+            for (index in 0 until entries.length()) {
+                val entry = entries.getJSONObject(index)
+                val relativePath = entry.getString("relative_path")
+                val segments = relativePath.split('/')
+                val sourceRoot = segments.first()
+                val targetRoot = rootNames.getOrPut(sourceRoot) {
+                    uniqueChildName(rootUri, sourceRoot, entry.getBoolean("is_directory"))
+                }
+                val targetSegments = listOf(targetRoot) + segments.drop(1)
+                if (entry.getBoolean("is_directory")) {
+                    ensureDirectoryPath(rootUri, targetSegments)
+                    continue
+                }
+
+                val parent = ensureDirectoryPath(rootUri, targetSegments.dropLast(1))
+                val finalName = targetSegments.last()
+                val temporaryName = ".$finalName.transassist-$transferId-${entry.getString("id")}.part"
+                val existing = findChild(parent, temporaryName)
+                val temporaryUri = existing?.uri ?: DocumentsContract.createDocument(
+                    context.contentResolver,
+                    parent,
+                    "application/octet-stream",
+                    temporaryName,
+                ) ?: error("无法创建临时文档 $temporaryName")
+                val descriptor = context.contentResolver.openFileDescriptor(temporaryUri, "rw")
+                    ?: error("文档提供程序没有返回写入描述符")
+                val detached = descriptor.detachFd()
+                opened += detached
+                output.put(
+                    JSONObject()
+                        .put("id", entry.getString("id"))
+                        .put("fd", detached)
+                        .put("temporary_uri", temporaryUri.toString())
+                        .put("final_name", finalName)
+                        .put("final_path", targetSegments.joinToString("/"))
+                        .put("existed", existing != null)
+                        .put("random_access", isRandomAccess(detached)),
+                )
+            }
+            return output.toString()
+        } catch (error: Exception) {
+            // 中途失败时关闭所有已 detach 但尚未移交给 Rust 的文件描述符，
+            // 防止进程内文件描述符泄漏。
+            closeOpened()
+            return JSONObject()
+                .put("error", error.message ?: error.javaClass.simpleName)
+                .toString()
+        }
     }
 
     @Suppress("unused")
@@ -96,44 +110,56 @@ object AndroidStorageBridge {
     @Suppress("unused")
     fun openSource(uriText: String): String {
         check(::context.isInitialized) { "SAF 桥尚未初始化" }
-        val uri = Uri.parse(uriText)
-        val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
-            ?: error("无法打开源文件: $uriText")
-        val detached = descriptor.detachFd()
-        val random = isRandomAccess(detached)
-        return JSONObject()
-            .put("fd", detached)
-            .put("random_access", random)
-            .toString()
+        return try {
+            val uri = Uri.parse(uriText)
+            val descriptor = context.contentResolver.openFileDescriptor(uri, "r")
+                ?: error("无法打开源文件: $uriText")
+            val detached = descriptor.detachFd()
+            val random = isRandomAccess(detached)
+            JSONObject()
+                .put("fd", detached)
+                .put("random_access", random)
+                .toString()
+        } catch (error: Exception) {
+            JSONObject()
+                .put("error", error.message ?: error.javaClass.simpleName)
+                .toString()
+        }
     }
 
     @Suppress("unused")
     fun sourceRevision(uriText: String): String {
         check(::context.isInitialized) { "SAF 桥尚未初始化" }
-        val uri = Uri.parse(uriText)
-        context.contentResolver.query(
-            uri,
-            arrayOf(
-                "_size",
-                "last_modified",
-            ),
-            null,
-            null,
-            null,
-        )?.use { cursor ->
-            if (cursor.moveToFirst()) {
-                val size = when {
-                    cursor.getColumnIndex("_size") >= 0 -> cursor.getLong(cursor.getColumnIndexOrThrow("_size"))
-                    else -> 0L
+        return try {
+            val uri = Uri.parse(uriText)
+            context.contentResolver.query(
+                uri,
+                arrayOf(
+                    "_size",
+                    "last_modified",
+                ),
+                null,
+                null,
+                null,
+            )?.use { cursor ->
+                if (cursor.moveToFirst()) {
+                    val size = when {
+                        cursor.getColumnIndex("_size") >= 0 -> cursor.getLong(cursor.getColumnIndexOrThrow("_size"))
+                        else -> 0L
+                    }
+                    val modified = when {
+                        cursor.getColumnIndex("last_modified") >= 0 -> cursor.getLong(cursor.getColumnIndexOrThrow("last_modified"))
+                        else -> 0L
+                    }
+                    return "$size:$modified"
                 }
-                val modified = when {
-                    cursor.getColumnIndex("last_modified") >= 0 -> cursor.getLong(cursor.getColumnIndexOrThrow("last_modified"))
-                    else -> 0L
-                }
-                return "$size:$modified"
             }
+            error("无法查询源文件元数据: $uriText")
+        } catch (error: Exception) {
+            JSONObject()
+                .put("error", error.message ?: error.javaClass.simpleName)
+                .toString()
         }
-        error("无法查询源文件元数据: $uriText")
     }
 
     private fun ensureDirectoryPath(root: Uri, segments: List<String>): Uri {

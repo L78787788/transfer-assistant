@@ -202,4 +202,33 @@ mod tests {
             resume
         );
     }
+
+    #[test]
+    fn mark_complete_is_idempotent_and_never_inflates_counts() {
+        let plan = ChunkPlan::new(10, 4).expect("valid plan");
+        let mut resume = ResumeMap::new(plan.chunk_count());
+
+        assert!(resume.mark_complete(1).expect("first mark"));
+        assert!(
+            !resume.mark_complete(1).expect("duplicate mark is ignored"),
+            "重复标记同一块必须返回 false"
+        );
+        assert_eq!(
+            resume.completed_bytes(&plan).expect("byte count"),
+            4,
+            "重复块不能重复累计字节数"
+        );
+        assert_eq!(
+            resume.to_bitmap_bytes(),
+            vec![0b0000_0010],
+            "位图中同一块只占一位"
+        );
+        assert!(!resume.mark_complete(1).expect("still duplicate"));
+        assert!(resume.mark_complete(2).expect("new chunk"));
+        assert_eq!(
+            resume.completed_bytes(&plan).expect("byte count"),
+            6,
+            "chunk 1 为 4 字节，chunk 2 为 2 字节"
+        );
+    }
 }

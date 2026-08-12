@@ -49,6 +49,17 @@ pub extern "system" fn Java_com_transassist_transfer_1assistant_AndroidStorageBr
     }
 }
 
+/// 解析 Kotlin 桥返回的 JSON；`{"error": "..."}` 表示桥内失败并携带可读消息。
+fn decode_result<T: for<'de> serde::Deserialize<'de>>(
+    json: &str,
+) -> Result<T, AndroidStorageError> {
+    let value: serde_json::Value = serde_json::from_str(json)?;
+    if let Some(message) = value.get("error").and_then(serde_json::Value::as_str) {
+        return Err(AndroidStorageError::Bridge(message.to_owned()));
+    }
+    serde_json::from_value(value).map_err(Into::into)
+}
+
 pub fn prepare_targets(
     tree_uri: &str,
     transfer_id: &str,
@@ -75,7 +86,7 @@ pub fn prepare_targets(
         let value: String = env.get_string(&result)?.into();
         Ok(value)
     })?;
-    serde_json::from_str(&json).map_err(Into::into)
+    decode_result(&json)
 }
 
 pub fn finalize_target(temporary_uri: &str, final_name: &str) -> Result<(), AndroidStorageError> {
@@ -145,11 +156,11 @@ pub fn open_source(uri: &str) -> Result<PreparedSource, AndroidStorageError> {
         let value: String = env.get_string(&result)?.into();
         Ok(value)
     })?;
-    serde_json::from_str(&json).map_err(Into::into)
+    decode_result(&json)
 }
 
 pub fn source_revision(uri: &str) -> Result<String, AndroidStorageError> {
-    with_bridge(|env, bridge| {
+    let json: String = with_bridge(|env, bridge| {
         let uri = env.new_string(uri)?;
         let result = env
             .call_method(
@@ -162,7 +173,8 @@ pub fn source_revision(uri: &str) -> Result<String, AndroidStorageError> {
         let result = JString::from(result);
         let value: String = env.get_string(&result)?.into();
         Ok(value)
-    })
+    })?;
+    decode_result(&json)
 }
 
 #[derive(Debug, Error)]
@@ -177,4 +189,6 @@ pub enum AndroidStorageError {
     FinalizeFailed,
     #[error("Android 临时文档删除失败")]
     DeleteFailed,
+    #[error("Android SAF 桥错误: {0}")]
+    Bridge(String),
 }

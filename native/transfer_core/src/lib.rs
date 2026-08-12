@@ -12,3 +12,9 @@ pub mod persistence;
 pub mod protocol;
 pub mod storage;
 pub mod transfer;
+
+// cargo-fuzz 在 Windows 上链接 cdylib 依赖时会注入 /include:main，
+// 需要一个可解析的 main 符号；仅在 fuzz 特性构建时导出，无副作用。
+#[cfg(all(windows, feature = "fuzz"))]
+#[unsafe(no_mangle)]
+pub extern "system" fn main() {}

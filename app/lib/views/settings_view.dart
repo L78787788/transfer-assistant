@@ -67,6 +67,18 @@ class _SettingsViewState extends State<SettingsView> {
               value: settings.receiveDirectory,
               onTap: widget.controller.chooseReceiveDirectory,
             ),
+            if (_isAppPrivateDirectory(settings.receiveDirectory))
+              Padding(
+                padding: const EdgeInsets.only(top: 4, bottom: 8),
+                child: Text(
+                  '当前为应用内部目录，卸载或清数据会丢失接收的文件。'
+                  '建议点击上方选择公共下载目录。',
+                  style: TextStyle(
+                    fontSize: 12,
+                    color: Theme.of(context).colorScheme.error,
+                  ),
+                ),
+              ),
             const Divider(),
             SwitchListTile(
               contentPadding: EdgeInsets.zero,
@@ -174,4 +186,11 @@ class _SettingsRow extends StatelessWidget {
       onTap: onTap,
     );
   }
+}
+
+/// Android 未授权公共目录时，接收目录是应用专属外部目录
+/// （`Android/data/<包名>/...`），卸载或清数据会丢失文件。
+bool _isAppPrivateDirectory(String receiveDirectory) {
+  final lower = receiveDirectory.toLowerCase();
+  return lower.contains('android/data/') || lower.contains('android/obb/');
 }

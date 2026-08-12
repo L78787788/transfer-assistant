@@ -8,6 +8,10 @@ rust-version.workspace = true
 [lib]
 crate-type = ["cdylib", "rlib"]
 
+[features]
+# 供 cargo-fuzz 在 Windows 上链接 cdylib 依赖时提供 main 符号。
+fuzz = []
+
 [dependencies]
 anyhow.workspace = true
 aes-gcm.workspace = true
@@ -33,6 +37,7 @@ tracing.workspace = true
 uuid.workspace = true
 
 [dev-dependencies]
+filetime = "0.2"
 tempfile = "3.22"
 walkdir = "2"
 

@@ -4,6 +4,7 @@ import 'dart:ffi';
 import 'dart:io';
 
 import 'package:ffi/ffi.dart';
+import 'package:flutter/material.dart';
 
 import 'models.dart';
 import 'transfer_core_client.dart';
@@ -183,6 +184,7 @@ class NativeTransferCoreClient implements TransferCoreClient {
         receiveDirectory: json['receive_directory']! as String,
         backgroundReceive: json['background_receive'] == true,
         autoAcceptTrusted: json['auto_accept_trusted'] == true,
+        themeMode: _themeModeFromName(json['theme_mode'] as String?),
       ),
     ),
     'peers_changed' => PeersChanged(
@@ -209,3 +211,9 @@ String _snakeCase(String value) => value.replaceAllMapped(
   RegExp('[A-Z]'),
   (match) => '_${match[0]!.toLowerCase()}',
 );
+
+ThemeMode _themeModeFromName(String? name) => switch (name) {
+  'light' => ThemeMode.light,
+  'dark' => ThemeMode.dark,
+  _ => ThemeMode.system,
+};

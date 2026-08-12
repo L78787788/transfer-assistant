@@ -181,9 +181,14 @@ pub enum TransferIoError {
 mod tests {
     use std::{fs::File, io::Write};
 
-    use crate::chunk::{ChunkPlan, ResumeMap};
+    use prost::Message;
 
-    use super::{receive_file_chunks, send_file_chunks};
+    use crate::{
+        chunk::{ChunkPlan, ResumeMap},
+        storage::StorageError,
+    };
+
+    use super::{TransferIoError, receive_file_chunks, send_file_chunks};
 
     #[tokio::test]
     async fn file_pipeline_transfers_missing_chunks_with_bounded_io() {
@@ -239,5 +244,114 @@ mod tests {
 
         assert_eq!(received, 2, "the completed middle chunk is not resent");
         assert_eq!(std::fs::read(target_path).expect("target bytes"), bytes);
+    }
+
+    #[tokio::test]
+    async fn corrupt_chunk_over_the_wire_is_rejected_without_write() {
+        let directory = tempfile::tempdir().expect("temporary directory");
+        let source_path = directory.path().join("source.bin");
+        let target_path = directory.path().join("target.part");
+        let bytes: Vec<u8> = (0..(5 * 1024 * 1024))
+            .map(|index| (index % 251) as u8)
+            .collect();
+        File::create(&source_path)
+            .and_then(|mut file| file.write_all(&bytes))
+            .expect("source fixture");
+        let target = File::create(&target_path).expect("target file");
+        target.set_len(bytes.len() as u64).expect("target length");
+        let plan = ChunkPlan::new(bytes.len() as u64, 4 * 1024 * 1024).expect("chunk plan");
+        let resume = ResumeMap::new(plan.chunk_count());
+
+        // 接收端在本地监听，发送端经过中间的“篡改代理”传输：代理只翻转第一个块
+        // payload 的第一个字节，保留头部中的原始 BLAKE3 哈希，模拟网络中损坏的数据。
+        let receiver_listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("receiver listener");
+        let receiver_address = receiver_listener.local_addr().expect("receiver address");
+        let proxy_listener = tokio::net::TcpListener::bind("127.0.0.1:0")
+            .await
+            .expect("proxy listener");
+        let proxy_address = proxy_listener.local_addr().expect("proxy address");
+        let total_length = bytes.len() as u64;
+
+        let receive_task = tokio::spawn(async move {
+            let (socket, _) = receiver_listener.accept().await.expect("accept receiver");
+            receive_file_chunks(socket, target, "transfer-1", "item-1", total_length, 2).await
+        });
+
+        let proxy_task = tokio::spawn(async move {
+            use tokio::io::{AsyncReadExt, AsyncWriteExt};
+            let (mut sender_side, _) = proxy_listener.accept().await.expect("accept sender");
+            let mut receiver_side = tokio::net::TcpStream::connect(receiver_address)
+                .await
+                .expect("connect receiver");
+            let mut length = [0_u8; 4];
+            sender_side
+                .read_exact(&mut length)
+                .await
+                .expect("header length");
+            let header_length = u32::from_be_bytes(length) as usize;
+            let mut header = vec![0_u8; header_length];
+            sender_side
+                .read_exact(&mut header)
+                .await
+                .expect("header bytes");
+            receiver_side
+                .write_all(&length)
+                .await
+                .expect("forward length");
+            receiver_side
+                .write_all(&header)
+                .await
+                .expect("forward header");
+            let header = crate::protocol::wire::ChunkHeader::decode(header.as_slice())
+                .expect("decode forwarded header");
+            let mut payload = vec![0_u8; header.length as usize];
+            sender_side
+                .read_exact(&mut payload)
+                .await
+                .expect("payload bytes");
+            payload[0] ^= 0xff;
+            receiver_side
+                .write_all(&payload)
+                .await
+                .expect("forward payload");
+            receiver_side.shutdown().await.expect("close data stream");
+        });
+
+        let send_result = tokio::time::timeout(std::time::Duration::from_secs(10), async {
+            let socket = tokio::net::TcpStream::connect(proxy_address)
+                .await
+                .expect("connect proxy");
+            send_file_chunks(
+                socket,
+                File::open(source_path).expect("source file"),
+                "transfer-1",
+                "item-1",
+                plan,
+                resume,
+            )
+            .await
+        })
+        .await;
+        // 发送端可能因代理提前关闭而收到 BrokenPipe，属预期，忽略。
+        if let Ok(result) = send_result {
+            let _ = result;
+        }
+        proxy_task.await.expect("proxy task");
+        let receive_result = receive_task.await.expect("receive task");
+
+        assert!(
+            matches!(
+                receive_result,
+                Err(TransferIoError::Storage(StorageError::HashMismatch { .. }))
+            ),
+            "损坏块必须被拒绝并返回哈希不匹配错误，实际: {receive_result:?}"
+        );
+        assert_eq!(
+            std::fs::read(&target_path).expect("target bytes"),
+            vec![0_u8; bytes.len()],
+            "校验失败的块不得写入目标文件"
+        );
     }
 }

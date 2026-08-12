@@ -31,6 +31,9 @@ VersionInfoVersion={#MyAppVersion}
 VersionInfoProductName={#MyAppName}
 VersionInfoProductVersion={#MyAppVersion}
 
+[Languages]
+Name: "chinesesimplified"; MessagesFile: "Languages\ChineseSimplified.isl"
+
 [Tasks]
 Name: "desktopicon"; Description: "创建桌面快捷方式"; GroupDescription: "附加任务："; Flags: unchecked
 

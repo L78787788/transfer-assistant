@@ -37,8 +37,14 @@ pub struct CoreConfig {
     pub receive_directory: PathBuf,
     pub background_receive: bool,
     pub auto_accept_trusted: bool,
+    #[serde(default = "default_theme_mode")]
+    pub theme_mode: String,
     #[serde(skip)]
     pub identity_wrap_key: Option<Vec<u8>>,
+}
+
+fn default_theme_mode() -> String {
+    "system".to_owned()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -89,6 +95,7 @@ pub enum CoreEvent {
         receive_directory: String,
         background_receive: bool,
         auto_accept_trusted: bool,
+        theme_mode: String,
     },
     PeersChanged {
         peers: Vec<PeerSummary>,
@@ -140,6 +147,8 @@ struct PersistedSettings {
     receive_directory: PathBuf,
     background_receive: bool,
     auto_accept_trusted: bool,
+    #[serde(default = "default_theme_mode")]
+    theme_mode: String,
 }
 
 struct StoredOutgoingJob {
@@ -168,6 +177,7 @@ impl TransferCore {
             config.receive_directory = saved.receive_directory;
             config.background_receive = saved.background_receive;
             config.auto_accept_trusted = saved.auto_accept_trusted;
+            config.theme_mode = saved.theme_mode;
             validate_config(&config)?;
             ensure_receive_directory(&config.receive_directory)?;
         }
@@ -221,6 +231,7 @@ impl TransferCore {
             receive_directory: effective.receive_directory.to_string_lossy().into_owned(),
             background_receive: effective.background_receive,
             auto_accept_trusted: effective.auto_accept_trusted,
+            theme_mode: effective.theme_mode,
         })?;
         inner.queue_event(CoreEvent::Ready)?;
 
@@ -419,6 +430,7 @@ impl TransferCore {
                 receive_directory: config.receive_directory.clone(),
                 background_receive: config.background_receive,
                 auto_accept_trusted: config.auto_accept_trusted,
+                theme_mode: config.theme_mode.clone(),
             },
         )?;
         self.inner.lock()?.config = config;
@@ -775,6 +787,9 @@ fn validate_config(config: &CoreConfig) -> Result<(), CoreError> {
     if config.device_name.trim().is_empty() {
         return Err(CoreError::EmptyDeviceName);
     }
+    if !matches!(config.theme_mode.as_str(), "system" | "light" | "dark") {
+        return Err(CoreError::InvalidThemeMode(config.theme_mode.clone()));
+    }
     Ok(())
 }
 
@@ -834,6 +849,8 @@ pub enum CoreError {
     Lifecycle(#[from] LifecycleError),
     #[error("设备名称不能为空")]
     EmptyDeviceName,
+    #[error("无效的主题模式: {0}")]
+    InvalidThemeMode(String),
     #[error("没有选择文件或文件夹")]
     NoSources,
     #[error("未知设备: {0}")]
@@ -874,6 +891,7 @@ mod tests {
             receive_directory: root.join("receive"),
             background_receive: false,
             auto_accept_trusted: false,
+            theme_mode: "system".to_owned(),
             identity_wrap_key: None,
         }
     }
@@ -1194,6 +1212,446 @@ mod tests {
             part_files.is_empty(),
             "cancel must delete all .part files, found: {part_files:?}"
         );
+        sender.shutdown().expect("sender shutdown");
+        receiver.shutdown().expect("receiver shutdown");
+    }
+
+    /// 泵出事件并自动接受所有入站请求，模拟配对确认流程。
+    fn pump_and_accept(cores: &[&TransferCore]) {
+        for core in cores {
+            while let Some(event) = core.next_event() {
+                if let CoreEvent::IncomingOffer { offer } = event {
+                    core.answer_offer(
+                        uuid::Uuid::parse_str(&offer.id).expect("offer id"),
+                        true,
+                        true,
+                    )
+                    .expect("accept offer");
+                }
+            }
+        }
+    }
+
+    /// 列出目录下的 .part 临时文件大小。
+    fn part_file_sizes(root: &std::path::Path) -> Vec<u64> {
+        walkdir::WalkDir::new(root)
+            .into_iter()
+            .filter_map(|entry| entry.ok())
+            .filter(|entry| {
+                entry
+                    .file_name()
+                    .to_str()
+                    .is_some_and(|name| name.ends_with(".part"))
+            })
+            .map(|entry| entry.metadata().map(|meta| meta.len()).unwrap_or(0))
+            .collect()
+    }
+
+    fn write_pattern(path: &std::path::Path, megabytes: usize) -> u64 {
+        let mut file = File::create(path).expect("source file");
+        let block = vec![0x5a_u8; 1024 * 1024];
+        for _ in 0..megabytes {
+            file.write_all(&block).expect("pattern write");
+        }
+        (megabytes * 1024 * 1024) as u64
+    }
+
+    #[test]
+    fn interrupted_network_transfer_resumes_without_rewriting_completed_chunks() {
+        let sender_root = tempfile::tempdir().expect("sender root");
+        let receiver_root = tempfile::tempdir().expect("receiver root");
+        let source_path = sender_root.path().join("large.bin");
+        let total_bytes = write_pattern(&source_path, 48);
+
+        let sender =
+            TransferCore::initialize(config(sender_root.path(), "发送电脑")).expect("sender core");
+        let receiver = TransferCore::initialize(config(receiver_root.path(), "接收电脑"))
+            .expect("receiver core");
+        let receiver_address = receiver.listening_address().expect("receiver address");
+        let peer_id = sender
+            .connect_address(&receiver_address.to_string())
+            .expect("manual peer");
+        let transfer_id = sender
+            .send(
+                &peer_id,
+                vec![SourceHandle {
+                    token: source_path.to_string_lossy().into_owned(),
+                    persistent_token: None,
+                    display_name: "large.bin".to_owned(),
+                    relative_path: None,
+                    is_directory: false,
+                    size: None,
+                    modified_unix_ms: None,
+                    random_access: None,
+                }],
+            )
+            .expect("send transfer");
+
+        // 等到发送端已产生真实进度（部分块已到达接收端）后强制断线。
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut interrupted_bytes = 0_u64;
+        while Instant::now() < deadline {
+            pump_and_accept(&[&sender, &receiver]);
+            if let Some(snapshot) = sender.transfers().into_iter().find(|t| t.id == transfer_id)
+                && snapshot.state == TransferState::Transferring
+                && snapshot.completed_bytes > 0
+            {
+                interrupted_bytes = snapshot.completed_bytes;
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(interrupted_bytes > 0, "传输应当开始并产生进度后再断线");
+        sender.shutdown().expect("stop sender mid-transfer");
+        drop(sender);
+
+        // 中断后接收端必须保留部分数据（断点续传的前提）。
+        let part_sizes = part_file_sizes(receiver_root.path());
+        assert!(
+            part_sizes.iter().any(|size| *size > 0),
+            "中断后必须保留 .part 部分数据，实际: {part_sizes:?}"
+        );
+
+        // 重启发送端，用原任务 ID 恢复，只补缺失块。
+        let restarted = TransferCore::initialize(config(sender_root.path(), "发送电脑"))
+            .expect("restart sender core");
+        restarted
+            .connect_address(&receiver_address.to_string())
+            .expect("reconnect receiver");
+        let restored = restarted
+            .transfers()
+            .into_iter()
+            .find(|t| t.id == transfer_id)
+            .expect("restored transfer");
+        assert_eq!(restored.state, TransferState::Interrupted);
+        assert!(
+            restored.completed_bytes > 0 && restored.completed_bytes < total_bytes,
+            "恢复任务应保留部分进度，实际 {} / {total_bytes}",
+            restored.completed_bytes
+        );
+        restarted
+            .command_transfer(transfer_id, crate::model::TransferCommand::Retry)
+            .expect("retry restored transfer");
+
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let mut completed = false;
+        while Instant::now() < deadline {
+            pump_and_accept(&[&restarted, &receiver]);
+            let sender_done = restarted
+                .transfers()
+                .iter()
+                .any(|t| t.id == transfer_id && t.state == TransferState::Completed);
+            let receiver_done = receiver
+                .transfers()
+                .iter()
+                .any(|t| t.id == transfer_id && t.state == TransferState::Completed);
+            if sender_done && receiver_done {
+                completed = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(completed, "断线续传应在 30 秒内恢复完成");
+
+        assert_eq!(
+            fs::read(receiver_root.path().join("receive/large.bin")).expect("received bytes"),
+            fs::read(&source_path).expect("source bytes"),
+            "恢复后的文件必须与源文件逐字节一致"
+        );
+        let final_snapshot = receiver
+            .transfers()
+            .into_iter()
+            .find(|t| t.id == transfer_id)
+            .expect("final snapshot");
+        assert!(
+            final_snapshot.completed_bytes <= final_snapshot.total_bytes,
+            "完成字节 {} 不能超过总大小 {}",
+            final_snapshot.completed_bytes,
+            final_snapshot.total_bytes
+        );
+        restarted.shutdown().expect("sender shutdown");
+        receiver.shutdown().expect("receiver shutdown");
+    }
+
+    #[test]
+    fn source_change_with_same_size_stops_the_transfer() {
+        let sender_root = tempfile::tempdir().expect("sender root");
+        let receiver_root = tempfile::tempdir().expect("receiver root");
+        let source_path = sender_root.path().join("changing.bin");
+        write_pattern(&source_path, 32);
+
+        let sender =
+            TransferCore::initialize(config(sender_root.path(), "发送电脑")).expect("sender core");
+        let receiver = TransferCore::initialize(config(receiver_root.path(), "接收电脑"))
+            .expect("receiver core");
+        let peer_id = sender
+            .connect_address(
+                &receiver
+                    .listening_address()
+                    .expect("receiver address")
+                    .to_string(),
+            )
+            .expect("manual peer");
+        let transfer_id = sender
+            .send(
+                &peer_id,
+                vec![SourceHandle {
+                    token: source_path.to_string_lossy().into_owned(),
+                    persistent_token: None,
+                    display_name: "changing.bin".to_owned(),
+                    relative_path: None,
+                    is_directory: false,
+                    size: None,
+                    modified_unix_ms: None,
+                    random_access: None,
+                }],
+            )
+            .expect("send transfer");
+
+        // 传输产生进度后，改写源文件内容（保持大小不变）并更新修改时间。
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut changed = false;
+        while Instant::now() < deadline {
+            pump_and_accept(&[&sender, &receiver]);
+            let started = sender
+                .transfers()
+                .iter()
+                .any(|t| t.id == transfer_id && t.state == TransferState::Transferring);
+            if started {
+                let block = vec![0x99_u8; 1024 * 1024];
+                let mut file = File::options()
+                    .write(true)
+                    .open(&source_path)
+                    .expect("reopen source");
+                for _ in 0..32 {
+                    file.write_all(&block).expect("rewrite source");
+                }
+                let future = std::time::SystemTime::now() + std::time::Duration::from_secs(30);
+                filetime::set_file_mtime(
+                    &source_path,
+                    filetime::FileTime::from_system_time(future),
+                )
+                .expect("bump mtime");
+                changed = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(changed, "传输应当开始后再改写源文件");
+
+        // 发送端必须在下一块发送前发现源文件变化并失败，而不是继续传输。
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut failed = false;
+        while Instant::now() < deadline {
+            pump_and_accept(&[&sender, &receiver]);
+            if let Some(snapshot) = sender.transfers().into_iter().find(|t| t.id == transfer_id)
+                && matches!(
+                    snapshot.state,
+                    TransferState::Failed | TransferState::Interrupted
+                )
+                && snapshot
+                    .error
+                    .as_deref()
+                    .is_some_and(|message| message.contains("源文件"))
+            {
+                failed = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(failed, "源文件变化必须让发送端任务失败并报告源文件错误");
+        sender.shutdown().expect("sender shutdown");
+        receiver.shutdown().expect("receiver shutdown");
+    }
+
+    #[test]
+    fn cancel_during_concurrent_channels_leaves_no_partial_files() {
+        for round in 0..3 {
+            let sender_root = tempfile::tempdir().expect("sender root");
+            let receiver_root = tempfile::tempdir().expect("receiver root");
+            let source_path = sender_root.path().join("concurrent.bin");
+            write_pattern(&source_path, 128);
+
+            let sender = TransferCore::initialize(config(sender_root.path(), "发送电脑"))
+                .expect("sender core");
+            let receiver = TransferCore::initialize(config(receiver_root.path(), "接收电脑"))
+                .expect("receiver core");
+            let peer_id = sender
+                .connect_address(
+                    &receiver
+                        .listening_address()
+                        .expect("receiver address")
+                        .to_string(),
+                )
+                .expect("manual peer");
+            let transfer_id = sender
+                .send(
+                    &peer_id,
+                    vec![SourceHandle {
+                        token: source_path.to_string_lossy().into_owned(),
+                        persistent_token: None,
+                        display_name: "concurrent.bin".to_owned(),
+                        relative_path: None,
+                        is_directory: false,
+                        size: None,
+                        modified_unix_ms: None,
+                        random_access: None,
+                    }],
+                )
+                .expect("send transfer");
+
+            // 等四条数据通道并发写入后取消。
+            let deadline = Instant::now() + Duration::from_secs(20);
+            let mut started = false;
+            while Instant::now() < deadline {
+                pump_and_accept(&[&sender, &receiver]);
+                if receiver
+                    .transfers()
+                    .iter()
+                    .any(|t| t.id == transfer_id && t.state == TransferState::Transferring)
+                {
+                    receiver
+                        .command_transfer(transfer_id, crate::model::TransferCommand::Cancel)
+                        .expect("cancel incoming");
+                    started = true;
+                    break;
+                }
+                thread::sleep(Duration::from_millis(10));
+            }
+            assert!(started, "第 {round} 轮：传输应进入 Transferring 后再取消");
+
+            let deadline = Instant::now() + Duration::from_secs(15);
+            let mut cancelled = false;
+            while Instant::now() < deadline {
+                pump_and_accept(&[&sender, &receiver]);
+                if receiver
+                    .transfers()
+                    .iter()
+                    .any(|t| t.id == transfer_id && t.state == TransferState::Cancelled)
+                {
+                    cancelled = true;
+                    break;
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+            assert!(cancelled, "第 {round} 轮：取消未在 15 秒内完成");
+
+            let part_sizes = part_file_sizes(receiver_root.path());
+            assert!(
+                part_sizes.is_empty(),
+                "第 {round} 轮：并发通道写入中取消后不得残留 .part，实际: {part_sizes:?}"
+            );
+            // 发送端最终也必须终止，不能悬挂在活动状态。
+            let deadline = Instant::now() + Duration::from_secs(15);
+            let mut sender_done = false;
+            while Instant::now() < deadline {
+                pump_and_accept(&[&sender, &receiver]);
+                if let Some(snapshot) = sender.transfers().into_iter().find(|t| t.id == transfer_id)
+                    && (snapshot.state.is_terminal()
+                        || matches!(
+                            snapshot.state,
+                            TransferState::Interrupted | TransferState::Failed
+                        ))
+                {
+                    sender_done = true;
+                    break;
+                }
+                thread::sleep(Duration::from_millis(20));
+            }
+            assert!(sender_done, "第 {round} 轮：发送端任务必须终止");
+
+            sender.shutdown().expect("sender shutdown");
+            receiver.shutdown().expect("receiver shutdown");
+        }
+    }
+
+    #[test]
+    fn receive_directory_write_failure_fails_cleanly() {
+        let sender_root = tempfile::tempdir().expect("sender root");
+        let receiver_root = tempfile::tempdir().expect("receiver root");
+        let source_path = sender_root.path().join("small.bin");
+        fs::write(&source_path, b"payload for write failure").expect("source file");
+
+        let sender =
+            TransferCore::initialize(config(sender_root.path(), "发送电脑")).expect("sender core");
+        let receiver = TransferCore::initialize(config(receiver_root.path(), "接收电脑"))
+            .expect("receiver core");
+        // 内核初始化已创建接收目录；在传输开始前把它替换为同名文件，
+        // 使接收端准备临时文件时的目录创建必然失败（写入失败路径）。
+        let occupied = receiver_root.path().join("receive");
+        fs::remove_dir_all(&occupied).expect("remove receive directory");
+        fs::write(&occupied, b"occupied").expect("occupied file");
+        let peer_id = sender
+            .connect_address(
+                &receiver
+                    .listening_address()
+                    .expect("receiver address")
+                    .to_string(),
+            )
+            .expect("manual peer");
+        let transfer_id = sender
+            .send(
+                &peer_id,
+                vec![SourceHandle {
+                    token: source_path.to_string_lossy().into_owned(),
+                    persistent_token: None,
+                    display_name: "small.bin".to_owned(),
+                    relative_path: None,
+                    is_directory: false,
+                    size: None,
+                    modified_unix_ms: None,
+                    random_access: None,
+                }],
+            )
+            .expect("send transfer");
+
+        // 接收端任务必须进入失败或可重试的中断状态，且携带明确错误。
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut receiver_failed = false;
+        while Instant::now() < deadline {
+            pump_and_accept(&[&sender, &receiver]);
+            if let Some(snapshot) = receiver
+                .transfers()
+                .into_iter()
+                .find(|t| t.id == transfer_id)
+                && matches!(
+                    snapshot.state,
+                    TransferState::Failed | TransferState::Interrupted
+                )
+                && snapshot.error.is_some()
+            {
+                receiver_failed = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            receiver_failed,
+            "写入失败必须让接收端任务失败或中断并给出错误"
+        );
+        assert!(
+            part_file_sizes(receiver_root.path()).is_empty(),
+            "写入失败后不得残留 .part 临时文件"
+        );
+
+        // 发送端也必须结束，不能无限等待接收决定。
+        let deadline = Instant::now() + Duration::from_secs(15);
+        let mut sender_done = false;
+        while Instant::now() < deadline {
+            pump_and_accept(&[&sender, &receiver]);
+            if let Some(snapshot) = sender.transfers().into_iter().find(|t| t.id == transfer_id)
+                && (snapshot.state.is_terminal()
+                    || matches!(
+                        snapshot.state,
+                        TransferState::Interrupted | TransferState::Failed
+                    ))
+            {
+                sender_done = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(sender_done, "接收失败后发送端任务也必须终止");
         sender.shutdown().expect("sender shutdown");
         receiver.shutdown().expect("receiver shutdown");
     }

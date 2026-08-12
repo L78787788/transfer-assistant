@@ -38,6 +38,12 @@ struct SettingsRequest {
     receive_directory: PathBuf,
     background_receive: bool,
     auto_accept_trusted: bool,
+    #[serde(default = "default_theme_mode")]
+    theme_mode: String,
+}
+
+fn default_theme_mode() -> String {
+    "system".to_owned()
 }
 
 /// Initializes the process-wide transfer core.
@@ -54,6 +60,7 @@ pub unsafe extern "C" fn transassist_initialize(request: *const c_char) -> *mut 
             receive_directory: request.settings.receive_directory,
             background_receive: request.settings.background_receive,
             auto_accept_trusted: request.settings.auto_accept_trusted,
+            theme_mode: request.settings.theme_mode,
             identity_wrap_key: request
                 .identity_wrap_key
                 .map(|encoded| {
@@ -165,6 +172,7 @@ pub unsafe extern "C" fn transassist_invoke(request: *const c_char) -> *mut c_ch
                 engine.config.receive_directory = settings.receive_directory;
                 engine.config.background_receive = settings.background_receive;
                 engine.config.auto_accept_trusted = settings.auto_accept_trusted;
+                engine.config.theme_mode = settings.theme_mode;
                 engine
                     .core
                     .update_settings(engine.config.clone())
