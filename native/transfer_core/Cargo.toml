@@ -1,0 +1,46 @@
+[package]
+name = "transfer_core"
+version = "0.1.0"
+edition.workspace = true
+license.workspace = true
+rust-version.workspace = true
+
+[lib]
+crate-type = ["cdylib", "rlib"]
+
+[dependencies]
+anyhow.workspace = true
+aes-gcm.workspace = true
+base64.workspace = true
+blake3.workspace = true
+bytes.workspace = true
+futures.workspace = true
+flume.workspace = true
+mdns-sd.workspace = true
+prost.workspace = true
+rcgen.workspace = true
+rusqlite.workspace = true
+rustls.workspace = true
+serde.workspace = true
+serde_json.workspace = true
+sha2.workspace = true
+thiserror.workspace = true
+tokio.workspace = true
+tokio-rustls.workspace = true
+tokio-util.workspace = true
+tracing.workspace = true
+uuid.workspace = true
+
+[dev-dependencies]
+tempfile = "3.22"
+walkdir = "2"
+
+[build-dependencies]
+prost-build = "0.14"
+protoc-bin-vendored = "3.2"
+
+[target.'cfg(windows)'.dependencies]
+windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Security_Cryptography", "Win32_System_Memory"] }
+
+[target.'cfg(target_os = "android")'.dependencies]
+jni = "0.21"

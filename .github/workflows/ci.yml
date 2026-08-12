@@ -1,0 +1,101 @@
+name: CI
+
+on:
+  push:
+  pull_request:
+
+jobs:
+  rust:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          targets: aarch64-linux-android
+          components: rustfmt, clippy
+      - uses: Swatinem/rust-cache@v2
+      - run: cargo fmt --all -- --check
+      - run: cargo clippy -p transfer_core --all-targets -- -D warnings
+      - run: cargo test --workspace
+
+  flutter:
+    runs-on: windows-latest
+    defaults:
+      run:
+        working-directory: app
+    steps:
+      - uses: actions/checkout@v4
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.6
+          channel: stable
+          cache: true
+      - run: dart format --output=none --set-exit-if-changed lib test
+      - run: flutter analyze
+      - run: flutter test
+
+  fuzz-harness:
+    runs-on: ubuntu-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97.1
+      - uses: Swatinem/rust-cache@v2
+        with:
+          workspaces: fuzz
+      - run: cargo install cargo-fuzz --locked
+      - working-directory: fuzz
+        run: cargo fuzz build control_message
+
+  packages:
+    runs-on: windows-latest
+    steps:
+      - uses: actions/checkout@v4
+      - uses: dtolnay/rust-toolchain@1.97.1
+        with:
+          targets: aarch64-linux-android
+      - uses: subosito/flutter-action@v2
+        with:
+          flutter-version: 3.44.6
+          channel: stable
+          cache: true
+      - name: Install Android NDK
+        shell: pwsh
+        run: sdkmanager "ndk;29.0.14206865"
+      - name: Generate CI-only Android key
+        shell: pwsh
+        run: .\scripts\ensure-android-signing.ps1
+      - name: Build Android arm64 Release
+        working-directory: app
+        run: flutter build apk --release --target-platform android-arm64
+      - name: Verify Android native library
+        shell: pwsh
+        run: |
+          Add-Type -AssemblyName System.IO.Compression.FileSystem
+          $apk = 'app/build/app/outputs/flutter-apk/app-release.apk'
+          $archive = [IO.Compression.ZipFile]::OpenRead((Resolve-Path $apk))
+          try {
+            if (-not ($archive.Entries.FullName -contains 'lib/arm64-v8a/libtransfer_core.so')) {
+              throw 'libtransfer_core.so is missing from the arm64 APK.'
+            }
+          } finally {
+            $archive.Dispose()
+          }
+      - name: Build Windows Release
+        working-directory: app
+        run: flutter build windows --release
+      - name: Verify Windows bundle
+        shell: pwsh
+        run: |
+          $bundle = 'app/build/windows/x64/runner/Release'
+          if (-not (Test-Path "$bundle/transfer_assistant.exe")) { throw 'Windows EXE is missing.' }
+          if (-not (Test-Path "$bundle/transfer_core.dll")) { throw 'Rust core DLL is missing.' }
+      - name: Compile installer
+        shell: pwsh
+        run: |
+          choco install innosetup --no-progress -y
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' '.\installer\transfer-assistant.iss'
+      - name: Installer smoke check
+        shell: pwsh
+        run: |
+          $installer = Get-Item 'dist/transfer-assistant-1.0.0-windows-x64-setup.exe'
+          if ($installer.Length -lt 1MB) { throw 'Installer is unexpectedly small.' }

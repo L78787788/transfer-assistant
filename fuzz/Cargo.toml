@@ -1,0 +1,22 @@
+[package]
+name = "transfer-core-fuzz"
+version = "0.0.0"
+publish = false
+edition = "2024"
+
+[package.metadata]
+cargo-fuzz = true
+
+[dependencies]
+libfuzzer-sys = "0.4"
+prost = "0.14"
+transfer_core = { path = "../native/transfer_core" }
+
+[[bin]]
+name = "control_message"
+path = "fuzz_targets/control_message.rs"
+test = false
+doc = false
+bench = false
+
+[workspace]

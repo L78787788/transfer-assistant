@@ -1,0 +1,31 @@
+# Flutter and Dart
+.dart_tool/
+.flutter-plugins
+.flutter-plugins-dependencies
+.packages
+build/
+coverage/
+
+# Rust
+target/
+
+# Android and IDEs
+.gradle/
+.idea/
+*.iml
+local.properties
+
+# Release artifacts and signing material
+dist/
+*.jks
+*.keystore
+key.properties
+
+# OS files
+.DS_Store
+Thumbs.db
+
+# Agent/IDE working traces
+.reasonix/
+.zcode/
+

@@ -1,0 +1,31 @@
+[workspace]
+members = ["native/transfer_core"]
+resolver = "3"
+
+[workspace.package]
+edition = "2024"
+license = "MIT OR Apache-2.0"
+rust-version = "1.97"
+
+[workspace.dependencies]
+anyhow = "1.0"
+aes-gcm = "0.10"
+base64 = "0.22"
+blake3 = "1.8"
+bytes = "1.10"
+futures = "0.3"
+flume = "0.11"
+mdns-sd = "0.17"
+prost = "0.14"
+rcgen = { version = "0.14", features = ["crypto", "pem", "ring"] }
+rusqlite = { version = "0.37", features = ["bundled"] }
+rustls = { version = "0.23", default-features = false, features = ["ring", "std"] }
+serde = { version = "1.0", features = ["derive"] }
+serde_json = "1.0"
+sha2 = "0.10"
+thiserror = "2.0"
+tokio = { version = "1.47", features = ["fs", "io-util", "macros", "net", "rt-multi-thread", "sync", "time"] }
+tokio-rustls = "0.26"
+tokio-util = "0.7"
+tracing = "0.1"
+uuid = { version = "1.18", features = ["serde", "v4"] }
