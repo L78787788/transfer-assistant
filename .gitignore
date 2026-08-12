@@ -29,3 +29,6 @@ Thumbs.db
 .reasonix/
 .zcode/
 
+
+# Security scan output
+.mimosa/
