@@ -153,7 +153,9 @@ object AndroidStorageBridge {
                         cursor.getColumnIndex("last_modified") >= 0 -> cursor.getLong(cursor.getColumnIndexOrThrow("last_modified"))
                         else -> 0L
                     }
-                    return "$size:$modified"
+                    // Rust 侧按 JSON 字符串解码（decode_result::<String>），
+                    // 必须用 JSONObject.quote 输出带引号的 JSON 字面量。
+                    return JSONObject.quote("$size:$modified")
                 }
             }
             error("无法查询源文件元数据: $uriText")
