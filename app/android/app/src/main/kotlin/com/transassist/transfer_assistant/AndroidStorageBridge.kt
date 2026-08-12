@@ -28,7 +28,9 @@ object AndroidStorageBridge {
         check(::context.isInitialized) { "SAF 桥尚未初始化" }
         val opened = mutableListOf<Int>()
         fun closeOpened() {
-            opened.forEach { fd -> runCatching { Os.close(fd) } }
+            opened.forEach { fd ->
+                runCatching { ParcelFileDescriptor.adoptFd(fd).close() }
+            }
         }
         try {
             val treeUri = Uri.parse(treeUriText)

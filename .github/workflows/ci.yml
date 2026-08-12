@@ -3,6 +3,16 @@ name: CI
 on:
   push:
   pull_request:
+  workflow_dispatch:
+    inputs:
+      version:
+        description: '发布版本号（用于安装器文件名与校验）'
+        required: false
+        default: '1.0.0'
+        type: string
+
+env:
+  APP_VERSION: ${{ inputs.version || '1.0.0' }}
 
 jobs:
   rust:
@@ -11,7 +21,6 @@ jobs:
       - uses: actions/checkout@v4
       - uses: dtolnay/rust-toolchain@1.97.1
         with:
-          targets: aarch64-linux-android
           components: rustfmt, clippy
       - uses: Swatinem/rust-cache@v2
       - run: cargo fmt --all -- --check
@@ -44,7 +53,13 @@ jobs:
           workspaces: fuzz
       - run: cargo install cargo-fuzz --locked
       - working-directory: fuzz
-        run: cargo fuzz build control_message
+        run: cargo fuzz build
+      - name: Fuzz smoke run (control message)
+        working-directory: fuzz
+        run: cargo fuzz run control_message -- -runs=1000
+      - name: Fuzz smoke run (chunk header)
+        working-directory: fuzz
+        run: cargo fuzz run chunk_header -- -runs=1000
 
   packages:
     runs-on: windows-latest
@@ -80,6 +95,11 @@ jobs:
           } finally {
             $archive.Dispose()
           }
+      - name: Copy APK to dist
+        shell: pwsh
+        run: |
+          New-Item -ItemType Directory -Force -Path dist | Out-Null
+          Copy-Item 'app/build/app/outputs/flutter-apk/app-release.apk' "dist/transfer-assistant-$env:APP_VERSION-android-arm64.apk"
       - name: Build Windows Release
         working-directory: app
         run: flutter build windows --release
@@ -93,9 +113,25 @@ jobs:
         shell: pwsh
         run: |
           choco install innosetup --no-progress -y
-          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' '.\installer\transfer-assistant.iss'
+          & 'C:\Program Files (x86)\Inno Setup 6\ISCC.exe' "/DMyAppVersion=$env:APP_VERSION" '.\installer\transfer-assistant.iss'
       - name: Installer smoke check
         shell: pwsh
         run: |
-          $installer = Get-Item 'dist/transfer-assistant-1.0.0-windows-x64-setup.exe'
+          $installer = Get-Item "dist/transfer-assistant-$env:APP_VERSION-windows-x64-setup.exe"
           if ($installer.Length -lt 1MB) { throw 'Installer is unexpectedly small.' }
+      - name: Generate SHA256 checksums
+        shell: pwsh
+        run: |
+          Get-ChildItem 'dist/transfer-assistant-*' | ForEach-Object {
+            $hash = (Get-FileHash $_.FullName -Algorithm SHA256).Hash.ToLower()
+            "$hash *$($_.Name)"
+          } | Sort-Object | Set-Content -Encoding utf8 'dist/SHA256SUMS.txt'
+      - name: Upload release artifacts
+        uses: actions/upload-artifact@v4
+        with:
+          name: transfer-assistant-${{ env.APP_VERSION }}
+          path: |
+            dist/transfer-assistant-${{ env.APP_VERSION }}-android-arm64.apk
+            dist/transfer-assistant-${{ env.APP_VERSION }}-windows-x64-setup.exe
+            dist/SHA256SUMS.txt
+          if-no-files-found: error

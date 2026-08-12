@@ -42,25 +42,23 @@ function Resolve-Iscc {
     throw 'ISCC.exe was not found. Install Inno Setup 6.'
 }
 
-function New-AsciiWorkspaceDrive {
-    $repositoryMarker = Join-Path $repoRoot 'Cargo.toml'
-    $repositoryMarkerHash = (Get-FileHash -LiteralPath $repositoryMarker -Algorithm SHA256).Hash
-    foreach ($letter in 'T', 'S', 'R', 'Q', 'P') {
-        $drive = "$letter`:"
-        if (-not (Test-Path "$drive\")) {
-            & subst.exe $drive $repoRoot
-            if ($LASTEXITCODE -ne 0) {
-                throw "Unable to map $drive to the repository."
-            }
-            return @{ Root = "$drive\"; Created = $true }
-        }
-        $mappedMarker = "$drive\Cargo.toml"
-        if ((Test-Path -LiteralPath $mappedMarker) -and
-            (Get-FileHash -LiteralPath $mappedMarker -Algorithm SHA256).Hash -eq $repositoryMarkerHash) {
-            return @{ Root = "$drive\"; Created = $false }
-        }
+function New-AsciiWorkspaceCopy {
+    # Gradle 对含中文的真实路径解析会失败（File.parent 为 null），
+    # subst/junction 也会被 Gradle 解析回中文真实路径，因此把源码
+    # 增量复制到纯 ASCII 路径构建。副本保留 Gradle/CMake 缓存以加速
+    # 后续构建；产物目录与仓库元数据不复制。
+    $copyRoot = 'E:\ta-build'
+    $excluded = @(
+        '/XD', 'target', 'dist', 'build', '.dart_tool', '.gradle',
+        '.git', '.reasonix', '.zcode', '.mimosa', 'node_modules'
+    )
+    $excluded += @('/XF', '*.jks', 'key.properties')
+    New-Item -ItemType Directory -Force -Path $copyRoot | Out-Null
+    & robocopy.exe $repoRoot $copyRoot /E @excluded /NFL /NDL /NJH /NP /R:1 /W:1
+    if ($LASTEXITCODE -gt 7) {
+        throw "Unable to copy the repository to the ASCII workspace ($copyRoot)."
     }
-    throw 'No free ASCII drive letter is available for the Flutter build.'
+    return @{ Root = $copyRoot }
 }
 
 $flutterTool = Resolve-Flutter
@@ -77,9 +75,9 @@ if (-not $env:PUB_HOSTED_URL) {
     $env:PUB_HOSTED_URL = 'https://pub.flutter-io.cn'
 }
 
-$workspaceDrive = New-AsciiWorkspaceDrive
+$workspaceCopy = New-AsciiWorkspaceCopy
 try {
-    $appRoot = Join-Path $workspaceDrive.Root 'app'
+    $appRoot = Join-Path $workspaceCopy.Root 'app'
     if (-not $SkipChecks) {
         Push-Location $repoRoot
         try {
@@ -113,24 +111,33 @@ try {
         Pop-Location
     }
 } finally {
-    if ($workspaceDrive.Created) {
-        $mappedDrive = $workspaceDrive.Root.Substring(0, 2)
-        & subst.exe $mappedDrive /D
-    }
+    # 保留 ASCII 副本及其构建缓存，供下一次发布构建增量复用。
 }
 
 New-Item -ItemType Directory -Force -Path $dist | Out-Null
-$apkSource = Join-Path $repoRoot 'app\build\app\outputs\flutter-apk\app-release.apk'
+$apkSource = Join-Path $workspaceCopy.Root 'app\build\app\outputs\flutter-apk\app-release.apk'
 if (-not (Test-Path -LiteralPath $apkSource)) {
     throw "Expected APK was not produced: $apkSource"
 }
 $apkTarget = Join-Path $dist "transfer-assistant-$Version-android-arm64.apk"
 Copy-Item -LiteralPath $apkSource -Destination $apkTarget -Force
 
-& $iscc "/DMyAppVersion=$Version" (Join-Path $repoRoot 'installer\transfer-assistant.iss')
+# 安装器必须在 ASCII 副本目录下编译：MySourceDir/OutputDir 相对当前目录解析，
+# 在副本下才能打包到本次构建的 Release 产物。
+Push-Location $workspaceCopy.Root
+try {
+    & $iscc "/DMyAppVersion=$Version" (Join-Path $workspaceCopy.Root 'installer\transfer-assistant.iss')
+} finally {
+    Pop-Location
+}
 if ($LASTEXITCODE -ne 0) {
     throw "Inno Setup failed with exit code $LASTEXITCODE"
 }
+$installerSource = Join-Path $workspaceCopy.Root "dist\transfer-assistant-$Version-windows-x64-setup.exe"
+if (-not (Test-Path -LiteralPath $installerSource)) {
+    throw "Expected installer was not produced: $installerSource"
+}
+Copy-Item -LiteralPath $installerSource -Destination $dist -Force
 
 $artifacts = Get-ChildItem -LiteralPath $dist -File |
     Where-Object Extension -In '.apk', '.exe' |
