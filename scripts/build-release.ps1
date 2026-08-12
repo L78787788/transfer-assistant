@@ -1,4 +1,4 @@
-param(
+﻿param(
     [string]$Version = '1.0.0',
     [string]$Flutter,
     [switch]$SkipChecks
