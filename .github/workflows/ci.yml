@@ -19,6 +19,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      # 本地 .cargo/config.toml 强制使用 rsproxy 镜像，GitHub 海外 runner 访问超时；
+      # 删除后回退到官方 crates.io（仅影响 CI 临时工作副本）。
+      - name: Use official crates.io in CI
+        run: rm -f .cargo/config.toml
       - uses: dtolnay/rust-toolchain@1.97.1
         with:
           components: rustfmt, clippy
@@ -51,6 +55,9 @@ jobs:
       RUSTUP_TOOLCHAIN: nightly
     steps:
       - uses: actions/checkout@v4
+      # 同 rust job：删除 rsproxy 镜像配置，回退官方 crates.io。
+      - name: Use official crates.io in CI
+        run: rm -f .cargo/config.toml
       # cargo-fuzz 依赖 nightly 的 -Z 编译选项，与本地开发环境保持一致。
       - uses: dtolnay/rust-toolchain@nightly
       - uses: Swatinem/rust-cache@v2
@@ -70,6 +77,10 @@ jobs:
     runs-on: windows-latest
     steps:
       - uses: actions/checkout@v4
+      # 同 rust job：删除 rsproxy 镜像配置，回退官方 crates.io
+      # （gradle 构建 APK 时会调 cargo 编译 Rust 内核）。
+      - name: Use official crates.io in CI
+        run: rm -f .cargo/config.toml
       - uses: dtolnay/rust-toolchain@1.97.1
         with:
           targets: aarch64-linux-android
