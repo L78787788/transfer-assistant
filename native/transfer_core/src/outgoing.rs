@@ -40,6 +40,48 @@ use crate::{
 
 const MANIFEST_PAGE_ENTRIES: usize = 1_000;
 
+/// 单个地址连接超时：多候选地址逐个尝试时避免被不可达地址拖死。
+const ADDRESS_CONNECT_TIMEOUT: std::time::Duration = std::time::Duration::from_secs(3);
+
+/// 解析对端广播的地址列表（逗号分隔，来自 mDNS 多接口广播）。
+fn parse_peer_addresses(address: &str) -> Result<Vec<SocketAddr>, LanError> {
+    let parsed = address
+        .split(',')
+        .map(str::trim)
+        .filter(|part| !part.is_empty())
+        .map(|part| {
+            part.parse::<SocketAddr>()
+                .map_err(|_| LanError::InvalidPeerAddress(address.to_owned()))
+        })
+        .collect::<Result<Vec<_>, _>>()?;
+    if parsed.is_empty() {
+        return Err(LanError::InvalidPeerAddress(address.to_owned()));
+    }
+    Ok(parsed)
+}
+
+/// 依次尝试候选地址，返回首个连通的 TCP 连接及其实际地址。
+async fn connect_any(addresses: &[SocketAddr]) -> Result<(TcpStream, SocketAddr), LanError> {
+    let mut last_error = None;
+    for &address in addresses {
+        match tokio::time::timeout(ADDRESS_CONNECT_TIMEOUT, TcpStream::connect(address)).await {
+            Ok(Ok(socket)) => return Ok((socket, address)),
+            Ok(Err(error)) => last_error = Some(error),
+            Err(_) => {
+                last_error = Some(std::io::Error::new(
+                    std::io::ErrorKind::TimedOut,
+                    format!("connect to {address} timed out"),
+                ));
+            }
+        }
+    }
+    Err(last_error
+        .unwrap_or_else(|| {
+            std::io::Error::new(std::io::ErrorKind::AddrNotAvailable, "no candidate address")
+        })
+        .into())
+}
+
 pub(crate) async fn write_manifest<S>(
     stream: &mut S,
     transfer_id: Uuid,
@@ -489,12 +531,11 @@ pub(crate) async fn run_outgoing(
         .await
         .map_err(|_| LanError::Stopped)?;
     inner.transition_transfer(transfer_id, TransferState::Connecting)?;
-    let address: SocketAddr = peer
-        .address
-        .parse()
-        .map_err(|_| LanError::InvalidPeerAddress(peer.address.clone()))?;
+    // 对端可能广播多个地址（WiFi 与移动数据混在一起），逐个尝试直到连上。
+    let addresses = parse_peer_addresses(&peer.address)?;
     let connector = TlsConnector::from(Arc::new(inner.identity.client_config()?));
-    let socket = TcpStream::connect(address).await?;
+    let (socket, address) = connect_any(&addresses).await?;
+    log::info!("发送 {transfer_id}: 控制通道已连接 {address}");
     socket.set_nodelay(true)?;
     let server_name = "transassist.local".try_into().expect("static DNS name");
     let mut tls = connector.connect(server_name, socket).await?;
@@ -556,11 +597,17 @@ pub(crate) async fn run_outgoing(
     };
     let _ = pairing_answer;
     inner.transition_transfer(transfer_id, TransferState::WaitingForAcceptance)?;
+    log::info!("发送 {transfer_id}: 等待接收方决策");
     let decision = expect_decision(read_envelope(&mut tls).await?)?;
     if decision.transfer_id != transfer_id.to_string() || !decision.accepted {
         return Err(LanError::OfferRejected(decision.reason));
     }
     let resume = expect_resume(read_envelope(&mut tls).await?)?;
+    log::info!(
+        "发送 {transfer_id}: 决策接受，恢复 {} 个文件条目，通道数 {}",
+        resume.files.len(),
+        decision.data_channel_count
+    );
     let jobs = build_chunk_jobs(&job, &resume)?;
     let remaining_bytes = jobs.iter().try_fold(0_u64, |total, chunk| {
         total
@@ -611,6 +658,7 @@ pub(crate) async fn run_outgoing(
     for task in tasks {
         task.await??;
     }
+    log::info!("发送 {transfer_id}: 数据通道完成，等待结果");
     let result = expect_result(read_envelope(&mut tls).await?)?;
     if !result.completed {
         return Err(LanError::RemoteTransferFailed(result.error));

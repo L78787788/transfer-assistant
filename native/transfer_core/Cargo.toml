@@ -21,6 +21,7 @@ bytes.workspace = true
 futures.workspace = true
 flume.workspace = true
 if-addrs = "0.7"
+log.workspace = true
 mdns-sd.workspace = true
 prost.workspace = true
 rcgen.workspace = true
@@ -50,3 +51,5 @@ windows-sys = { version = "0.61", features = ["Win32_Foundation", "Win32_Securit
 
 [target.'cfg(target_os = "android")'.dependencies]
 jni = "0.21"
+# 真机诊断：把 Rust 日志输出到 logcat（tag: transassist）。
+android_logger = "0.14"

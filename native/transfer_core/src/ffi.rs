@@ -52,6 +52,12 @@ fn default_theme_mode() -> String {
 /// `request` must point to a valid, NUL-terminated UTF-8 string for the duration of this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn transassist_initialize(request: *const c_char) -> *mut c_char {
+    #[cfg(target_os = "android")]
+    android_logger::init_once(
+        android_logger::Config::default()
+            .with_max_level(log::LevelFilter::Info)
+            .with_tag("transassist"),
+    );
     ffi_boundary(|| {
         let request: InitializeRequest = decode_request(request)?;
         let config = CoreConfig {

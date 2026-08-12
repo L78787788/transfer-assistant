@@ -142,6 +142,7 @@ async fn accept_loop(
                         .await
                     }
                     Ok(wire::ConnectionKind::Data) => {
+                        log::info!("接收 {transfer_id}: 数据通道接入（来自 {remote_address}）");
                         incoming::handle_incoming_data(
                             &mut tls,
                             handler_inner.clone(),
@@ -165,6 +166,7 @@ async fn accept_loop(
             }
             .await;
             if let Err(error) = result {
+                log::warn!("局域网连接处理失败: {error}");
                 let _ = connection_inner.queue_event(crate::core::CoreEvent::Failure {
                     message: format!("局域网连接失败: {error}"),
                 });
@@ -321,6 +323,11 @@ where
     )
     .await?;
     write_envelope(tls, &context.resume_envelope()?).await?;
+    log::info!(
+        "接收 {transfer_id}: 已接受并进入传输（{} 个剩余块，{} 通道）",
+        context.remaining_chunks.load(Ordering::Acquire),
+        channel_count
+    );
     inner.transition_transfer(transfer_id, TransferState::Transferring)?;
 
     if context.remaining_chunks.load(Ordering::Acquire) != 0 {

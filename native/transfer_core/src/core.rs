@@ -494,6 +494,7 @@ impl TransferCore {
             if let Err(error) =
                 lan::run_outgoing(inner.clone(), transfer_id, peer, job, control).await
             {
+                log::warn!("发送任务失败 {transfer_id}: {error}");
                 if error.is_retryable() {
                     let _ = inner.interrupt_transfer(transfer_id, error.to_string());
                 } else {

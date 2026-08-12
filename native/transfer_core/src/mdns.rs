@@ -20,6 +20,12 @@ use crate::{
 
 pub(crate) const SERVICE_TYPE: &str = "_transassist._tcp.local.";
 
+/// 移动数据接口名（Android 常见前缀），与局域网发现无关。
+fn is_cellular_interface(name: &str) -> bool {
+    const CELLULAR_PREFIXES: &[&str] = &["ccmni", "rmnet", "pdp", "swlan", "wwan", "radio"];
+    CELLULAR_PREFIXES.iter().any(|prefix| name.starts_with(prefix))
+}
+
 pub(crate) struct MdnsHandle {
     daemon: ServiceDaemon,
     fullname: String,
@@ -56,9 +62,11 @@ impl MdnsHandle {
             ("version".to_owned(), PROTOCOL_MAJOR.to_string()),
         ]);
         // Collect non-loopback IPv4 addresses for mDNS announcement.
+        // 移动数据接口（ccmni/rmnet 等）与局域网无关，混入广播会误导对端连接。
         let addrs: Vec<String> = get_if_addrs()
             .unwrap_or_default()
             .into_iter()
+            .filter(|iface| !is_cellular_interface(&iface.name))
             .filter_map(|iface| match iface.addr {
                 if_addrs::IfAddr::V4(ref v4) if !v4.ip.is_loopback() => Some(v4.ip.to_string()),
                 _ => None,
@@ -112,6 +120,22 @@ impl MdnsHandle {
                             else {
                                 continue;
                             };
+                            // 保留对端广播的全部地址，发送端连接时逐个尝试；
+                            // 单一地址可能落在移动数据接口上导致连接失败。
+                            let addresses = info
+                                .get_addresses_v4()
+                                .into_iter()
+                                .filter(|address| !address.is_loopback())
+                                .map(|address| {
+                                    SocketAddr::new(IpAddr::V4(address), info.get_port())
+                                        .to_string()
+                                })
+                                .collect::<Vec<_>>();
+                            let address_text = if addresses.is_empty() {
+                                SocketAddr::new(IpAddr::V4(ip), info.get_port()).to_string()
+                            } else {
+                                addresses.join(",")
+                            };
                             let name = info
                                 .get_property_val_str("name")
                                 .unwrap_or(peer_id)
@@ -129,8 +153,7 @@ impl MdnsHandle {
                             let _ = inner.upsert_peer(PeerSummary {
                                 id: peer_id.to_owned(),
                                 name,
-                                address: SocketAddr::new(IpAddr::V4(ip), info.get_port())
-                                    .to_string(),
+                                address: address_text,
                                 device_kind: kind,
                                 trusted,
                                 online: true,
