@@ -32,7 +32,8 @@ impl MdnsHandle {
         let daemon = ServiceDaemon::new()?;
         let short_id = &inner.identity.device_id()[..12];
         let instance = format!("transassist-{short_id}");
-        let hostname = format!("transassist-{short_id}");
+        // mdns_sd 要求主机名以 .local. 结尾（多播 DNS 域名后缀）。
+        let hostname = format!("transassist-{short_id}.local.");
         let config = inner.config()?;
         let properties = HashMap::from([
             ("id".to_owned(), inner.identity.device_id().to_owned()),
