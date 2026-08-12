@@ -22,6 +22,7 @@ jobs:
       # 本地 .cargo/config.toml 强制使用 rsproxy 镜像，GitHub 海外 runner 访问超时；
       # 删除后回退到官方 crates.io（仅影响 CI 临时工作副本）。
       - name: Use official crates.io in CI
+        shell: bash
         run: rm -f .cargo/config.toml
       - uses: dtolnay/rust-toolchain@1.97.1
         with:
@@ -80,6 +81,7 @@ jobs:
       # 同 rust job：删除 rsproxy 镜像配置，回退官方 crates.io
       # （gradle 构建 APK 时会调 cargo 编译 Rust 内核）。
       - name: Use official crates.io in CI
+        shell: bash
         run: rm -f .cargo/config.toml
       - uses: dtolnay/rust-toolchain@1.97.1
         with:
