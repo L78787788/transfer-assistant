@@ -130,18 +130,30 @@ impl MdnsHandle {
             .unwrap_or_default()
             .into_iter()
             .filter_map(|iface| match iface.addr {
-                if_addrs::IfAddr::V4(ref v4) if !v4.ip.is_loopback() => {
-                    Some(v4.ip.to_string())
-                }
+                if_addrs::IfAddr::V4(ref v4) if !v4.ip.is_loopback() => Some(v4.ip.to_string()),
                 _ => None,
             })
             .collect();
         let addr_str = addrs.join(",");
         let service = if addr_str.is_empty() {
-            ServiceInfo::new(SERVICE_TYPE, &instance, &hostname, "", port, Some(properties))?
-                .enable_addr_auto()
+            ServiceInfo::new(
+                SERVICE_TYPE,
+                &instance,
+                &hostname,
+                "",
+                port,
+                Some(properties),
+            )?
+            .enable_addr_auto()
         } else {
-            ServiceInfo::new(SERVICE_TYPE, &instance, &hostname, &addr_str, port, Some(properties))?
+            ServiceInfo::new(
+                SERVICE_TYPE,
+                &instance,
+                &hostname,
+                &addr_str,
+                port,
+                Some(properties),
+            )?
         };
         let fullname = service.get_fullname().to_owned();
         daemon.register(service)?;
