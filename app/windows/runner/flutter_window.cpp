@@ -85,6 +85,25 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
         ::SetForegroundWindow(hwnd);
         return 0;
       }
+      if (lparam == WM_RBUTTONUP) {
+        // Show right-click context menu.
+        POINT cursor;
+        ::GetCursorPos(&cursor);
+        ::SetForegroundWindow(hwnd);
+        HMENU menu = ::CreatePopupMenu();
+        ::AppendMenuW(menu, MF_STRING, IDM_TRAY_EXIT, L"退出");
+        ::TrackPopupMenu(menu, TPM_RIGHTALIGN | TPM_BOTTOMALIGN | TPM_RIGHTBUTTON,
+                         cursor.x, cursor.y, 0, hwnd, nullptr);
+        ::DestroyMenu(menu);
+        return 0;
+      }
+      break;
+    case WM_COMMAND:
+      if (LOWORD(wparam) == IDM_TRAY_EXIT && HIWORD(wparam) == 0) {
+        RemoveTrayIcon();
+        ::PostQuitMessage(0);
+        return 0;
+      }
       break;
     case WM_FONTCHANGE:
       flutter_controller_->engine()->ReloadSystemFonts();

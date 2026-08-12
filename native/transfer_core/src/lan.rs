@@ -12,6 +12,7 @@ use std::{
     time::UNIX_EPOCH,
 };
 
+use if_addrs::get_if_addrs;
 use mdns_sd::{ServiceDaemon, ServiceEvent, ServiceInfo};
 use thiserror::Error;
 use tokio::{
@@ -108,7 +109,7 @@ impl MdnsHandle {
         let daemon = ServiceDaemon::new()?;
         let short_id = &inner.identity.device_id()[..12];
         let instance = format!("transassist-{short_id}");
-        let hostname = format!("transassist-{short_id}.local.");
+        let hostname = format!("transassist-{short_id}");
         let config = inner.config()?;
         let properties = HashMap::from([
             ("id".to_owned(), inner.identity.device_id().to_owned()),
@@ -124,15 +125,24 @@ impl MdnsHandle {
             ),
             ("version".to_owned(), PROTOCOL_MAJOR.to_string()),
         ]);
-        let service = ServiceInfo::new(
-            SERVICE_TYPE,
-            &instance,
-            &hostname,
-            "",
-            port,
-            Some(properties),
-        )?
-        .enable_addr_auto();
+        // Collect non-loopback IPv4 addresses for mDNS announcement.
+        let addrs: Vec<String> = get_if_addrs()
+            .unwrap_or_default()
+            .into_iter()
+            .filter_map(|iface| match iface.addr {
+                if_addrs::IfAddr::V4(ref v4) if !v4.ip.is_loopback() => {
+                    Some(v4.ip.to_string())
+                }
+                _ => None,
+            })
+            .collect();
+        let addr_str = addrs.join(",");
+        let service = if addr_str.is_empty() {
+            ServiceInfo::new(SERVICE_TYPE, &instance, &hostname, "", port, Some(properties))?
+                .enable_addr_auto()
+        } else {
+            ServiceInfo::new(SERVICE_TYPE, &instance, &hostname, &addr_str, port, Some(properties))?
+        };
         let fullname = service.get_fullname().to_owned();
         daemon.register(service)?;
         let receiver = daemon.browse(SERVICE_TYPE)?;

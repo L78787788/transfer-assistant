@@ -95,4 +95,7 @@ class _FakeCore implements TransferCoreClient {
 
   @override
   Future<void> updateSettings(AppSettings settings) async {}
+
+  @override
+  Future<void> removeTrustedPeer(String peerId) async {}
 }

@@ -16,6 +16,7 @@ blake3.workspace = true
 bytes.workspace = true
 futures.workspace = true
 flume.workspace = true
+if-addrs = "0.7"
 mdns-sd.workspace = true
 prost.workspace = true
 rcgen.workspace = true
