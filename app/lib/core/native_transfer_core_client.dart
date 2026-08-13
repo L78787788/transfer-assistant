@@ -68,6 +68,7 @@ class NativeTransferCoreClient implements TransferCoreClient {
     required AppSettings settings,
     required String dataDirectory,
     String? identityWrapKey,
+    String? logDirectory,
   }) async {
     if (_library == null) {
       _events.add(CoreFailure('传输内核未加载：$_loadError'));
@@ -77,6 +78,7 @@ class NativeTransferCoreClient implements TransferCoreClient {
       'settings': settings.toJson(),
       'data_directory': dataDirectory,
       'identity_wrap_key': ?identityWrapKey,
+      'log_directory': ?logDirectory,
     });
     _pollTimer = Timer.periodic(
       const Duration(milliseconds: 120),

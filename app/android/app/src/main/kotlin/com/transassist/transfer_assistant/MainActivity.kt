@@ -32,6 +32,7 @@ class MainActivity : FlutterActivity() {
                         "dataDirectory" to File(filesDir, "transfer-core").absolutePath,
                         "receiveDirectory" to configuredReceiveDirectory(),
                         "identityWrapKey" to IdentityKeyStore(this).wrappingKeyBase64(),
+                        "logDirectory" to (getExternalFilesDir(null)?.absolutePath ?: filesDir.absolutePath),
                     ),
                 )
                 "pickFiles" -> launchFilePicker(result)

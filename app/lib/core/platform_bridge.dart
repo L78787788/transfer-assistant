@@ -9,11 +9,13 @@ class PlatformPaths {
     required this.dataDirectory,
     required this.receiveDirectory,
     this.identityWrapKey,
+    this.logDirectory,
   });
 
   final String dataDirectory;
   final String receiveDirectory;
   final String? identityWrapKey;
+  final String? logDirectory;
 }
 
 class PlatformBridge {
@@ -29,6 +31,7 @@ class PlatformBridge {
           dataDirectory: result['dataDirectory']!,
           receiveDirectory: result['receiveDirectory']!,
           identityWrapKey: result['identityWrapKey'],
+          logDirectory: result['logDirectory'],
         );
       }
     } on MissingPluginException {

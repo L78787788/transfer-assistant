@@ -7,6 +7,7 @@ abstract interface class TransferCoreClient {
     required AppSettings settings,
     required String dataDirectory,
     String? identityWrapKey,
+    String? logDirectory,
   });
 
   Future<void> refreshPeers();

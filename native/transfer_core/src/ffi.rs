@@ -19,6 +19,67 @@ use crate::{
 
 static ENGINE: OnceLock<Mutex<Option<FfiEngine>>> = OnceLock::new();
 
+/// 写文件的日志器：部分厂商（如 vivo）通过 `log.tag` 系统属性抑制第三方应用的
+/// logcat 日志，文件日志可绕开该限制，便于真机诊断。
+#[cfg(target_os = "android")]
+struct FileLogger {
+    file: std::sync::Mutex<std::fs::File>,
+}
+
+#[cfg(target_os = "android")]
+impl log::Log for FileLogger {
+    fn enabled(&self, _metadata: &log::Metadata<'_>) -> bool {
+        true
+    }
+
+    fn log(&self, record: &log::Record<'_>) {
+        use std::io::Write;
+        if let Ok(mut file) = self.file.lock() {
+            let _ = writeln!(
+                file,
+                "[{}] {}: {}",
+                record.level(),
+                record.target(),
+                record.args()
+            );
+            let _ = file.flush();
+        }
+    }
+
+    fn flush(&self) {
+        use std::io::Write;
+        if let Ok(mut file) = self.file.lock() {
+            let _ = file.flush();
+        }
+    }
+}
+
+/// 初始化日志：优先写文件（绕开厂商对 logcat 第三方日志的抑制），失败则回退 logcat。
+#[cfg(target_os = "android")]
+fn init_android_logger(log_directory: Option<&std::path::Path>) {
+    use std::io::Write;
+    if let Some(dir) = log_directory {
+        let path = dir.join("transassist.log");
+        if let Ok(file) = std::fs::OpenOptions::new()
+            .create(true)
+            .append(true)
+            .open(&path)
+        {
+            let logger = FileLogger {
+                file: std::sync::Mutex::new(file),
+            };
+            let _ = log::set_boxed_logger(Box::new(logger));
+            let _ = log::set_max_level(log::LevelFilter::Info);
+            return;
+        }
+    }
+    android_logger::init_once(
+        android_logger::Config::default()
+            .with_max_level(log::LevelFilter::Info)
+            .with_tag("transassist"),
+    );
+}
+
 struct FfiEngine {
     core: TransferCore,
     config: CoreConfig,
@@ -30,6 +91,10 @@ struct InitializeRequest {
     data_directory: PathBuf,
     #[serde(default)]
     identity_wrap_key: Option<String>,
+    // 仅 Android 用于文件日志，桌面端暂不使用。
+    #[cfg_attr(not(target_os = "android"), allow(dead_code))]
+    #[serde(default)]
+    log_directory: Option<PathBuf>,
 }
 
 #[derive(Deserialize)]
@@ -52,14 +117,10 @@ fn default_theme_mode() -> String {
 /// `request` must point to a valid, NUL-terminated UTF-8 string for the duration of this call.
 #[unsafe(no_mangle)]
 pub unsafe extern "C" fn transassist_initialize(request: *const c_char) -> *mut c_char {
-    #[cfg(target_os = "android")]
-    android_logger::init_once(
-        android_logger::Config::default()
-            .with_max_level(log::LevelFilter::Info)
-            .with_tag("transassist"),
-    );
     ffi_boundary(|| {
         let request: InitializeRequest = decode_request(request)?;
+        #[cfg(target_os = "android")]
+        init_android_logger(request.log_directory.as_deref());
         let config = CoreConfig {
             data_directory: request.data_directory,
             device_name: request.settings.device_name,

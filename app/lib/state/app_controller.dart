@@ -34,6 +34,7 @@ class AppController extends ChangeNotifier {
         settings: settings,
         dataDirectory: paths.dataDirectory,
         identityWrapKey: paths.identityWrapKey,
+        logDirectory: paths.logDirectory,
       );
     } catch (error) {
       errorMessage = '初始化失败：$error';
