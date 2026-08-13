@@ -672,6 +672,7 @@ pub(crate) async fn run_outgoing(
     }
     inner.transition_transfer(transfer_id, TransferState::Verifying)?;
     inner.transition_transfer(transfer_id, TransferState::Completed)?;
+    log::info!("发送 {transfer_id}: 任务完成");
     Ok(())
 }
 

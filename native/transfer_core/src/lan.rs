@@ -366,6 +366,7 @@ where
     }
     inner.transition_transfer(transfer_id, TransferState::Completed)?;
     write_envelope(tls, &result_envelope(transfer_id, true, "")).await?;
+    log::info!("接收 {transfer_id}: 任务完成");
     state
         .incoming
         .lock()

@@ -21,12 +21,10 @@ static ENGINE: OnceLock<Mutex<Option<FfiEngine>>> = OnceLock::new();
 
 /// 写文件的日志器：部分厂商（如 vivo）通过 `log.tag` 系统属性抑制第三方应用的
 /// logcat 日志，文件日志可绕开该限制，便于真机诊断。
-#[cfg(target_os = "android")]
 struct FileLogger {
     file: std::sync::Mutex<std::fs::File>,
 }
 
-#[cfg(target_os = "android")]
 impl log::Log for FileLogger {
     fn enabled(&self, _metadata: &log::Metadata<'_>) -> bool {
         true
@@ -54,10 +52,8 @@ impl log::Log for FileLogger {
     }
 }
 
-/// 初始化日志：优先写文件（绕开厂商对 logcat 第三方日志的抑制），失败则回退 logcat。
-#[cfg(target_os = "android")]
-fn init_android_logger(log_directory: Option<&std::path::Path>) {
-    use std::io::Write;
+/// 初始化文件日志：优先写文件；Android 上失败则回退 logcat。
+fn init_file_logger(log_directory: Option<&std::path::Path>) {
     if let Some(dir) = log_directory {
         let path = dir.join("transassist.log");
         if let Ok(file) = std::fs::OpenOptions::new()
@@ -65,14 +61,16 @@ fn init_android_logger(log_directory: Option<&std::path::Path>) {
             .append(true)
             .open(&path)
         {
-            let logger = FileLogger {
-                file: std::sync::Mutex::new(file),
-            };
-            let _ = log::set_boxed_logger(Box::new(logger));
+            let logger: &'static FileLogger =
+                Box::leak(Box::new(FileLogger {
+                    file: std::sync::Mutex::new(file),
+                }));
+            let _ = log::set_logger(logger);
             let _ = log::set_max_level(log::LevelFilter::Info);
             return;
         }
     }
+    #[cfg(target_os = "android")]
     android_logger::init_once(
         android_logger::Config::default()
             .with_max_level(log::LevelFilter::Info)
@@ -119,8 +117,12 @@ fn default_theme_mode() -> String {
 pub unsafe extern "C" fn transassist_initialize(request: *const c_char) -> *mut c_char {
     ffi_boundary(|| {
         let request: InitializeRequest = decode_request(request)?;
-        #[cfg(target_os = "android")]
-        init_android_logger(request.log_directory.as_deref());
+        // 日志优先写文件（跨平台），目录缺失时回退到数据目录。
+        let log_dir = request
+            .log_directory
+            .as_deref()
+            .or(Some(request.data_directory.as_path()));
+        init_file_logger(log_dir);
         let config = CoreConfig {
             data_directory: request.data_directory,
             device_name: request.settings.device_name,
