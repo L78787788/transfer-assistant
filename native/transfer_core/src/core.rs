@@ -672,6 +672,16 @@ impl CoreInner {
             == Some(TransferState::Cancelled)
     }
 
+    pub(crate) fn transfer_is_failed(&self, id: Uuid) -> bool {
+        self.state
+            .lock()
+            .ok()
+            .and_then(|state| state.transfers.get(&id).map(|transfer| transfer.state))
+            .is_some_and(|state| {
+                matches!(state, TransferState::Failed | TransferState::Interrupted)
+            })
+    }
+
     pub(crate) fn update_peer_identity(
         &self,
         old_peer_id: Option<&str>,

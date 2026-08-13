@@ -338,6 +338,15 @@ where
             if inner.transfer_is_cancelled(transfer_id) {
                 return Err(LanError::Cancelled);
             }
+            if inner.transfer_is_failed(transfer_id) {
+                // 数据通道已失败（accept_loop 已 fail_transfer），主动告知发送端，避免其无限等待。
+                let _ = write_envelope(
+                    tls,
+                    &result_envelope(transfer_id, false, "数据通道传输失败，接收中止"),
+                )
+                .await;
+                return Err(LanError::Core("数据通道传输失败，接收中止".to_owned()));
+            }
             tokio::select! {
                 () = context.completed.notified() => {}
                 () = tokio::time::sleep(Duration::from_millis(200)) => {}
