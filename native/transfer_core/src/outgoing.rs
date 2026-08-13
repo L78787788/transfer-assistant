@@ -10,7 +10,7 @@ use std::{
 };
 
 use tokio::{
-    io::{AsyncWrite, AsyncWriteExt},
+    io::{AsyncReadExt, AsyncWrite, AsyncWriteExt},
     net::TcpStream,
     sync::Notify,
 };
@@ -744,6 +744,18 @@ async fn send_data_channel(request: SendDataChannelRequest) -> Result<(), LanErr
         inner.update_completed_bytes(transfer_id, u64::from(chunk.spec.length))?;
     }
     tls.shutdown().await?;
+    // 等待对端关闭（读到 EOF），完成完整 TLS 关闭握手。
+    // 否则立即 drop 会让底层 TCP 在仍有未读数据时发 RST，导致接收端读到 ConnectionReset。
+    let mut drain = [0_u8; 1024];
+    let _ = tokio::time::timeout(std::time::Duration::from_secs(5), async {
+        loop {
+            match tls.read(&mut drain).await {
+                Ok(0) | Err(_) => break,
+                Ok(_) => continue,
+            }
+        }
+    })
+    .await;
     Ok(())
 }
 
