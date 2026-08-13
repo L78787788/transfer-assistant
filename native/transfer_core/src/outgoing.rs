@@ -659,7 +659,14 @@ pub(crate) async fn run_outgoing(
         task.await??;
     }
     log::info!("发送 {transfer_id}: 数据通道完成，等待结果");
-    let result = expect_result(read_envelope(&mut tls).await?)?;
+    // 接收端整理落盘（rename）可能耗时，给一个宽松超时避免无限卡死。
+    let envelope = tokio::time::timeout(
+        std::time::Duration::from_secs(60),
+        read_envelope(&mut tls),
+    )
+    .await
+    .map_err(|_| LanError::Core("等待接收方确认超时".to_owned()))??;
+    let result = expect_result(envelope)?;
     if !result.completed {
         return Err(LanError::RemoteTransferFailed(result.error));
     }

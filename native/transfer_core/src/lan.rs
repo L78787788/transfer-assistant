@@ -346,7 +346,15 @@ where
         }
     }
     inner.transition_transfer(transfer_id, TransferState::Verifying)?;
-    incoming::finalize_incoming(&context)?;
+    if let Err(error) = incoming::finalize_incoming(&context) {
+        // finalize 失败时主动告知发送端失败结果，避免发送端无限等待。
+        let _ = write_envelope(
+            tls,
+            &result_envelope(transfer_id, false, &error.to_string()),
+        )
+        .await;
+        return Err(error);
+    }
     inner.transition_transfer(transfer_id, TransferState::Completed)?;
     write_envelope(tls, &result_envelope(transfer_id, true, "")).await?;
     state

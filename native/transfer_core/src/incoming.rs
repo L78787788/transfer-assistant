@@ -464,7 +464,8 @@ pub(crate) fn finalize_incoming(context: &IncomingContext) -> Result<(), LanErro
                     file.entry.relative_path.clone(),
                 ));
             }
-            file.target.sync_all()?;
+            // 不调用 sync_all：SAF 的 FUSE 文件描述符上 fsync 可能长时间阻塞甚至失败，
+            // 导致传输"收完了却卡在最后一步"。renameDocument 本身会落盘，无需额外 fsync。
             crate::android_storage::finalize_target(
                 file.android_temporary_uri
                     .as_deref()
@@ -495,7 +496,6 @@ pub(crate) fn finalize_incoming(context: &IncomingContext) -> Result<(), LanErro
                 file.entry.relative_path.clone(),
             ));
         }
-        file.target.sync_all()?;
         if let Some(parent) = file.final_path.parent() {
             fs::create_dir_all(parent)?;
         }
