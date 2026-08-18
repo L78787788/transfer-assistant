@@ -21,7 +21,7 @@
 | JNI GlobalRef/FD 唯一所有权 | ✅ | 修复后 `AndroidStorageBridge.prepareTargets` 失败时关闭全部已 detach FD（adoptFd 包装）；Rust 侧 `File::from_raw_fd` 唯一持有；错误经 JSON 保留中文消息 |
 | 暂停/取消/重试竞态 | ✅ | `JobControl.checkpoint` 统一检查点；接收端 `transfer_is_cancelled` 每块检查；测试 `cancel_during_concurrent_channels_leaves_no_partial_files`（3 轮并发通道取消） |
 | 进度不超总大小 | ✅ | `core.rs:614` `saturating_add().min(total_bytes)`；重复块 `mark_complete` 幂等不重复累计；测试 `mark_complete_is_idempotent_and_never_inflates_counts` |
-| 接收完成前不暴露最终文件 | ✅ | `incoming.rs` finalize_incoming：全部块校验 + sync_all 后才原子 rename；重名拒绝覆盖 |
+| 接收完成前不暴露最终文件 | ✅ | `incoming.rs` finalize_incoming：全部块校验后，Windows 先 sync_all 再原子 rename；Android 由 SAF 文档提供程序完成最终改名；重名拒绝覆盖 |
 | 64 MiB 缓冲与四通道限制 | ✅ | `chunk.rs` 常量 + `run_outgoing` 通道数 `min(MAX_DATA_CHANNELS)`；不可随机访问降级单通道 |
 | 未使用协议消息 | ✅ | `DataChannelHello`/`TransferControl` 保留在 proto（前向兼容）但代码不使用 |
 | 源文件变化检测 | ✅ | 每块发送前 `verify_source_revision`（size:modified）；测试 `source_change_with_same_size_stops_the_transfer` |
