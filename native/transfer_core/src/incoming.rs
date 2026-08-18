@@ -45,6 +45,8 @@ pub(crate) struct IncomingContext {
     pub(crate) directories: Vec<PathBuf>,
     pub(crate) temporary_root: PathBuf,
     pub(crate) remaining_chunks: AtomicU64,
+    scheduled_chunks: u64,
+    expected_by_channel: Mutex<Vec<u64>>,
     pub(crate) completed: Notify,
     pub(crate) repository: Arc<crate::persistence::TransferRepository>,
     #[cfg(target_os = "android")]
@@ -77,6 +79,67 @@ impl IncomingContext {
         self.token.lock().map(|token| *token).unwrap_or_default()
     }
 
+    pub(crate) fn configure_channels(&self, channel_count: u32) -> Result<(), LanError> {
+        let channel_count =
+            usize::try_from(channel_count).map_err(|_| LanError::InvalidDataChannel)?;
+        let mut expected = vec![0_u64; channel_count];
+        if channel_count != 0 {
+            let channel_count = channel_count as u64;
+            let base = self.scheduled_chunks / channel_count;
+            let extra = self.scheduled_chunks % channel_count;
+            for (index, count) in expected.iter_mut().enumerate() {
+                *count = base + u64::from((index as u64) < extra);
+            }
+        }
+        *self
+            .expected_by_channel
+            .lock()
+            .map_err(|_| LanError::LockPoisoned)? = expected;
+        Ok(())
+    }
+
+    pub(crate) fn validate_channel(&self, channel_index: u32) -> Result<(), LanError> {
+        let index = usize::try_from(channel_index).map_err(|_| LanError::InvalidDataChannel)?;
+        if self
+            .expected_by_channel
+            .lock()
+            .map_err(|_| LanError::LockPoisoned)?
+            .get(index)
+            .is_none()
+        {
+            return Err(LanError::InvalidDataChannel);
+        }
+        Ok(())
+    }
+
+    pub(crate) fn mark_channel_chunk(&self, channel_index: u32) -> Result<(), LanError> {
+        let index = usize::try_from(channel_index).map_err(|_| LanError::InvalidDataChannel)?;
+        let mut expected = self
+            .expected_by_channel
+            .lock()
+            .map_err(|_| LanError::LockPoisoned)?;
+        let remaining = expected
+            .get_mut(index)
+            .ok_or(LanError::InvalidDataChannel)?;
+        if *remaining == 0 {
+            return Err(LanError::UnexpectedDataChannelEnd(channel_index));
+        }
+        *remaining -= 1;
+        Ok(())
+    }
+
+    pub(crate) fn channel_has_pending(&self, channel_index: u32) -> Result<bool, LanError> {
+        let index = usize::try_from(channel_index).map_err(|_| LanError::InvalidDataChannel)?;
+        Ok(self
+            .expected_by_channel
+            .lock()
+            .map_err(|_| LanError::LockPoisoned)?
+            .get(index)
+            .copied()
+            .ok_or(LanError::InvalidDataChannel)?
+            != 0)
+    }
+
     pub(crate) fn resume_envelope(&self) -> Result<wire::Envelope, LanError> {
         let mut files = Vec::with_capacity(self.files.len());
         for file in self.files.values() {
@@ -105,6 +168,7 @@ pub(crate) async fn handle_incoming_data<S>(
     state: Arc<NetworkState>,
     transfer_id: Uuid,
     token: Vec<u8>,
+    channel_index: u32,
     peer_fingerprint: [u8; 32],
 ) -> Result<(), LanError>
 where
@@ -120,6 +184,7 @@ where
     if context.token() != token.as_slice() || context.peer_fingerprint != peer_fingerprint {
         return Err(LanError::InvalidTransferToken);
     }
+    context.validate_channel(channel_index)?;
     loop {
         let header = match read_header(tls).await {
             Ok(header) => header,
@@ -129,6 +194,9 @@ where
                     std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::ConnectionReset
                 ) =>
             {
+                if context.channel_has_pending(channel_index)? {
+                    return Err(LanError::IncompleteDataChannel(channel_index));
+                }
                 break;
             }
             Err(error) => return Err(error.into()),
@@ -196,6 +264,7 @@ where
                 &hash,
             )?;
             inner.update_completed_bytes(transfer_id, written_length)?;
+            context.mark_channel_chunk(channel_index)?;
             if context.remaining_chunks.fetch_sub(1, Ordering::AcqRel) == 1 {
                 context.completed.notify_waiters();
             }
@@ -321,6 +390,8 @@ pub(crate) fn prepare_incoming(
         directories,
         temporary_root,
         remaining_chunks: AtomicU64::new(remaining_chunks),
+        scheduled_chunks: remaining_chunks,
+        expected_by_channel: Mutex::new(Vec::new()),
         completed: Notify::new(),
         repository: inner.repository.clone(),
         #[cfg(target_os = "android")]
@@ -438,6 +509,8 @@ fn prepare_incoming_android(
         directories: Vec::new(),
         temporary_root: PathBuf::new(),
         remaining_chunks: AtomicU64::new(remaining_chunks),
+        scheduled_chunks: remaining_chunks,
+        expected_by_channel: Mutex::new(Vec::new()),
         completed: Notify::new(),
         repository: inner.repository.clone(),
         android_saf: true,
@@ -464,8 +537,8 @@ pub(crate) fn finalize_incoming(context: &IncomingContext) -> Result<(), LanErro
                     file.entry.relative_path.clone(),
                 ));
             }
-            // 不调用 sync_all：SAF 的 FUSE 文件描述符上 fsync 可能长时间阻塞甚至失败，
-            // 导致传输"收完了却卡在最后一步"。renameDocument 本身会落盘，无需额外 fsync。
+            // SAF 的 FUSE 文件描述符上 fsync 可能长时间阻塞甚至失败，
+            // 因此 Android 由文档提供程序在重命名时完成落盘。
             crate::android_storage::finalize_target(
                 file.android_temporary_uri
                     .as_deref()
@@ -496,6 +569,7 @@ pub(crate) fn finalize_incoming(context: &IncomingContext) -> Result<(), LanErro
                 file.entry.relative_path.clone(),
             ));
         }
+        file.target.sync_all()?;
         if let Some(parent) = file.final_path.parent() {
             fs::create_dir_all(parent)?;
         }

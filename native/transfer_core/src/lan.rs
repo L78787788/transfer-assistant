@@ -149,6 +149,7 @@ async fn accept_loop(
                             connection_state,
                             transfer_id,
                             open.transfer_token,
+                            open.channel_index,
                             peer_fingerprint,
                         )
                         .await
@@ -317,6 +318,12 @@ where
         .lock()
         .map_err(|_| LanError::LockPoisoned)?
         .insert(transfer_id, context.clone());
+    let _context_guard = IncomingContextGuard {
+        state: state.clone(),
+        transfer_id,
+        context: context.clone(),
+    };
+    context.configure_channels(channel_count)?;
     write_envelope(
         tls,
         &decision_envelope(transfer_id, true, "", &token, channel_count),
@@ -367,12 +374,25 @@ where
     inner.transition_transfer(transfer_id, TransferState::Completed)?;
     write_envelope(tls, &result_envelope(transfer_id, true, "")).await?;
     log::info!("接收 {transfer_id}: 任务完成");
-    state
-        .incoming
-        .lock()
-        .map_err(|_| LanError::LockPoisoned)?
-        .remove(&transfer_id);
     Ok(())
+}
+
+struct IncomingContextGuard {
+    state: Arc<NetworkState>,
+    transfer_id: Uuid,
+    context: Arc<IncomingContext>,
+}
+
+impl Drop for IncomingContextGuard {
+    fn drop(&mut self) {
+        if let Ok(mut incoming) = self.state.incoming.lock()
+            && incoming
+                .get(&self.transfer_id)
+                .is_some_and(|current| Arc::ptr_eq(current, &self.context))
+        {
+            incoming.remove(&self.transfer_id);
+        }
+    }
 }
 
 #[derive(Debug, Error)]
@@ -463,6 +483,12 @@ pub enum LanError {
     MissingFinalPath,
     #[error("任务尚有文件未完整接收: {0}")]
     IncompleteTransfer(String),
+    #[error("数据通道 {0} 提前结束")]
+    IncompleteDataChannel(u32),
+    #[error("无效的数据通道")]
+    InvalidDataChannel,
+    #[error("数据通道 {0} 发送了超出计划的数据")]
+    UnexpectedDataChannelEnd(u32),
     #[error("校验期间目标路径被其他文件占用: {0}")]
     TargetAppeared(PathBuf),
     #[cfg(target_os = "android")]
@@ -479,6 +505,7 @@ impl LanError {
                 | Self::Stopped
                 | Self::RemoteTransferFailed(_)
                 | Self::SourceChanged(_)
+                | Self::IncompleteDataChannel(_)
         )
     }
 }

@@ -54,28 +54,29 @@ impl log::Log for FileLogger {
 
 /// 初始化文件日志：优先写文件；Android 上失败则回退 logcat。
 fn init_file_logger(log_directory: Option<&std::path::Path>) {
-    if let Some(dir) = log_directory {
+    let file = log_directory.and_then(|dir| {
+        std::fs::create_dir_all(dir).ok()?;
         let path = dir.join("transassist.log");
-        if let Ok(file) = std::fs::OpenOptions::new()
+        std::fs::OpenOptions::new()
             .create(true)
             .append(true)
             .open(&path)
-        {
-            let logger: &'static FileLogger =
-                Box::leak(Box::new(FileLogger {
-                    file: std::sync::Mutex::new(file),
-                }));
-            let _ = log::set_logger(logger);
-            let _ = log::set_max_level(log::LevelFilter::Info);
-            return;
-        }
+            .ok()
+    });
+    if let Some(file) = file {
+        let logger: &'static FileLogger = Box::leak(Box::new(FileLogger {
+            file: std::sync::Mutex::new(file),
+        }));
+        let _ = log::set_logger(logger);
+        log::set_max_level(log::LevelFilter::Info);
+    } else {
+        #[cfg(target_os = "android")]
+        android_logger::init_once(
+            android_logger::Config::default()
+                .with_max_level(log::LevelFilter::Info)
+                .with_tag("transassist"),
+        );
     }
-    #[cfg(target_os = "android")]
-    android_logger::init_once(
-        android_logger::Config::default()
-            .with_max_level(log::LevelFilter::Info)
-            .with_tag("transassist"),
-    );
 }
 
 struct FfiEngine {
@@ -344,3 +345,48 @@ fn parse_uuid(request: &Value, field: &str) -> Result<Uuid, String> {
 
 #[allow(dead_code)]
 fn _reserved_for_forward_compatible_arguments(_: HashMap<String, Value>) {}
+
+#[cfg(test)]
+mod tests {
+    use std::ffi::{CStr, CString};
+
+    use super::{transassist_free_string, transassist_initialize, transassist_invoke};
+
+    #[test]
+    fn initialization_creates_the_log_directory() {
+        let root = tempfile::tempdir().expect("temporary root");
+        let data = root.path().join("data");
+        let receive = root.path().join("receive");
+        let logs = root.path().join("logs");
+        let request = serde_json::json!({
+            "settings": {
+                "device_name": "日志测试设备",
+                "receive_directory": receive,
+                "background_receive": false,
+                "auto_accept_trusted": false,
+            },
+            "data_directory": data,
+            "log_directory": logs,
+        });
+        let request = CString::new(request.to_string()).expect("request without NUL");
+        let response_ptr = unsafe { transassist_initialize(request.as_ptr()) };
+        assert!(!response_ptr.is_null(), "初始化必须返回结果");
+        let response = unsafe { CStr::from_ptr(response_ptr) }
+            .to_str()
+            .expect("UTF-8 response")
+            .to_owned();
+        unsafe { transassist_free_string(response_ptr) };
+        assert!(
+            response.contains("\"ok\":true"),
+            "初始化必须成功: {response}"
+        );
+        assert!(
+            logs.join("transassist.log").is_file(),
+            "首次启动必须创建文件日志"
+        );
+
+        let shutdown = CString::new(r#"{"command":"shutdown"}"#).expect("shutdown request");
+        let response = unsafe { transassist_invoke(shutdown.as_ptr()) };
+        unsafe { transassist_free_string(response) };
+    }
+}

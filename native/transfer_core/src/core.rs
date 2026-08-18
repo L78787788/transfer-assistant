@@ -1316,6 +1316,24 @@ mod tests {
         sender.shutdown().expect("stop sender mid-transfer");
         drop(sender);
 
+        // 数据通道意外结束后，接收端必须尽快进入可重试状态，不能等待发送端结果超时。
+        let deadline = Instant::now() + Duration::from_secs(5);
+        let mut receiver_interrupted = false;
+        while Instant::now() < deadline {
+            pump_and_accept(&[&receiver]);
+            if receiver.transfers().iter().any(|snapshot| {
+                snapshot.id == transfer_id && snapshot.state == TransferState::Interrupted
+            }) {
+                receiver_interrupted = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(
+            receiver_interrupted,
+            "数据通道断开后接收端必须在 5 秒内进入中断状态"
+        );
+
         // 中断后接收端必须保留部分数据（断点续传的前提）。
         let part_sizes = part_file_sizes(receiver_root.path());
         assert!(

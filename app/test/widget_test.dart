@@ -52,6 +52,7 @@ class _FakeCore implements TransferCoreClient {
     required AppSettings settings,
     required String dataDirectory,
     String? identityWrapKey,
+    String? logDirectory,
   }) async {
     controller.add(const CoreReady());
     controller.add(

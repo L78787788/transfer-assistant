@@ -23,7 +23,9 @@ pub(crate) const SERVICE_TYPE: &str = "_transassist._tcp.local.";
 /// 移动数据接口名（Android 常见前缀），与局域网发现无关。
 fn is_cellular_interface(name: &str) -> bool {
     const CELLULAR_PREFIXES: &[&str] = &["ccmni", "rmnet", "pdp", "swlan", "wwan", "radio"];
-    CELLULAR_PREFIXES.iter().any(|prefix| name.starts_with(prefix))
+    CELLULAR_PREFIXES
+        .iter()
+        .any(|prefix| name.starts_with(prefix))
 }
 
 pub(crate) struct MdnsHandle {
