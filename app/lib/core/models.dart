@@ -209,6 +209,7 @@ class AppSettings {
     this.autoAcceptTrusted = false,
     this.themeMode = ThemeMode.system,
     this.themeStyle = AppThemeStyle.radar,
+    this.hasCompletedFirstSetup = false,
   });
 
   final String deviceName;
@@ -217,6 +218,7 @@ class AppSettings {
   final bool autoAcceptTrusted;
   final ThemeMode themeMode;
   final AppThemeStyle themeStyle;
+  final bool hasCompletedFirstSetup;
 
   AppSettings copyWith({
     String? deviceName,
@@ -225,6 +227,7 @@ class AppSettings {
     bool? autoAcceptTrusted,
     ThemeMode? themeMode,
     AppThemeStyle? themeStyle,
+    bool? hasCompletedFirstSetup,
   }) => AppSettings(
     deviceName: deviceName ?? this.deviceName,
     receiveDirectory: receiveDirectory ?? this.receiveDirectory,
@@ -232,6 +235,8 @@ class AppSettings {
     autoAcceptTrusted: autoAcceptTrusted ?? this.autoAcceptTrusted,
     themeMode: themeMode ?? this.themeMode,
     themeStyle: themeStyle ?? this.themeStyle,
+    hasCompletedFirstSetup:
+        hasCompletedFirstSetup ?? this.hasCompletedFirstSetup,
   );
 
   Map<String, Object?> toJson() => {
@@ -241,6 +246,7 @@ class AppSettings {
     'auto_accept_trusted': autoAcceptTrusted,
     'theme_mode': themeMode.name,
     'theme_style': themeStyle.name,
+    'has_completed_first_setup': hasCompletedFirstSetup,
   };
 }
 

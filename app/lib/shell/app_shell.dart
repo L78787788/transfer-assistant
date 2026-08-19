@@ -120,6 +120,8 @@ class AppShell extends StatelessWidget {
                       ),
                     ),
             ),
+            if (!controller.isInitializing && !controller.settings.hasCompletedFirstSetup)
+              _FirstLaunchNamingOverlay(controller: controller),
             if (controller.pendingOffer case final TransferOffer offer)
               _OfferOverlay(controller: controller, offer: offer),
           ],
@@ -739,5 +741,244 @@ class _OfferOverlayState extends State<_OfferOverlay> {
       return '${(bytes / (1024 * 1024)).toStringAsFixed(1)} MB';
     }
     return '${(bytes / (1024 * 1024 * 1024)).toStringAsFixed(2)} GB';
+  }
+}
+
+/// 首次启动设备命名引导弹窗
+class _FirstLaunchNamingOverlay extends StatefulWidget {
+  const _FirstLaunchNamingOverlay({required this.controller});
+
+  final AppController controller;
+
+  @override
+  State<_FirstLaunchNamingOverlay> createState() =>
+      _FirstLaunchNamingOverlayState();
+}
+
+class _FirstLaunchNamingOverlayState extends State<_FirstLaunchNamingOverlay> {
+  late final TextEditingController _nameController;
+  String? _errorMessage;
+
+  @override
+  void initState() {
+    super.initState();
+    _nameController = TextEditingController(
+      text: widget.controller.settings.deviceName,
+    );
+  }
+
+  @override
+  void dispose() {
+    _nameController.dispose();
+    super.dispose();
+  }
+
+  void _submit() {
+    final name = _nameController.text.trim();
+    if (name.isEmpty) {
+      setState(() {
+        _errorMessage = '设备名称不能为空';
+      });
+      return;
+    }
+    widget.controller.updateSettings(
+      widget.controller.settings.copyWith(
+        deviceName: name,
+        hasCompletedFirstSetup: true,
+      ),
+    );
+  }
+
+  @override
+  Widget build(BuildContext context) {
+    final theme = Theme.of(context);
+    final colors = theme.colorScheme;
+    final isDark = theme.brightness == Brightness.dark;
+
+    return Material(
+      color: Colors.black.withValues(alpha: 0.65),
+      child: BackdropFilter(
+        filter: ImageFilter.blur(sigmaX: 10, sigmaY: 10),
+        child: Center(
+          child: ConstrainedBox(
+            constraints: const BoxConstraints(maxWidth: 440),
+            child: Padding(
+              padding: const EdgeInsets.all(24),
+              child: SingleChildScrollView(
+                child: GlassCard(
+                  borderRadius: 24,
+                  padding: const EdgeInsets.all(28),
+                  child: Column(
+                    mainAxisSize: MainAxisSize.min,
+                    crossAxisAlignment: CrossAxisAlignment.stretch,
+                    children: [
+                      Center(
+                        child: Container(
+                          width: 58,
+                          height: 58,
+                          decoration: BoxDecoration(
+                            gradient: LinearGradient(
+                              begin: Alignment.topLeft,
+                              end: Alignment.bottomRight,
+                              colors: [
+                                colors.primary,
+                                colors.secondary,
+                              ],
+                            ),
+                            shape: BoxShape.circle,
+                            boxShadow: [
+                              BoxShadow(
+                                color: colors.primary.withValues(alpha: 0.35),
+                                blurRadius: 16,
+                                offset: const Offset(0, 6),
+                              ),
+                            ],
+                          ),
+                          child: const Icon(
+                            LucideIcons.sparkles,
+                            size: 28,
+                            color: Colors.white,
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 20),
+                      Text(
+                        '欢迎使用传输助手',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 20,
+                          fontWeight: FontWeight.w700,
+                          color: colors.onSurface,
+                          letterSpacing: -0.5,
+                        ),
+                      ),
+                      const SizedBox(height: 8),
+                      Text(
+                        '请为这台设备起一个名称，局域网内的其他手机或电脑将通过此名称快速识别您。',
+                        textAlign: TextAlign.center,
+                        style: TextStyle(
+                          fontSize: 13,
+                          height: 1.45,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      TextField(
+                        controller: _nameController,
+                        autofocus: true,
+                        textInputAction: TextInputAction.done,
+                        onSubmitted: (_) => _submit(),
+                        onChanged: (val) {
+                          if (_errorMessage != null && val.trim().isNotEmpty) {
+                            setState(() => _errorMessage = null);
+                          }
+                        },
+                        style: TextStyle(
+                          fontSize: 15,
+                          fontWeight: FontWeight.w600,
+                          color: colors.onSurface,
+                        ),
+                        decoration: InputDecoration(
+                          labelText: '本设备名称',
+                          hintText: '例如：我的工作电脑 / 小米的手机',
+                          errorText: _errorMessage,
+                          prefixIcon: Icon(
+                            LucideIcons.smartphone,
+                            size: 20,
+                            color: colors.primary,
+                          ),
+                          suffixIcon: IconButton(
+                            icon: const Icon(LucideIcons.x, size: 16),
+                            onPressed: () {
+                              _nameController.clear();
+                              setState(() => _errorMessage = null);
+                            },
+                          ),
+                          filled: true,
+                          fillColor: isDark
+                              ? const Color(0xff1e293b).withValues(alpha: 0.5)
+                              : const Color(0xfff1f5f9),
+                          border: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide.none,
+                          ),
+                          focusedBorder: OutlineInputBorder(
+                            borderRadius: BorderRadius.circular(12),
+                            borderSide: BorderSide(
+                              color: colors.primary,
+                              width: 1.5,
+                            ),
+                          ),
+                        ),
+                      ),
+                      const SizedBox(height: 16),
+                      Container(
+                        padding: const EdgeInsets.symmetric(
+                          horizontal: 14,
+                          vertical: 10,
+                        ),
+                        decoration: BoxDecoration(
+                          color: colors.primary.withValues(alpha: 0.08),
+                          borderRadius: BorderRadius.circular(10),
+                          border: Border.all(
+                            color: colors.primary.withValues(alpha: 0.18),
+                            width: 1,
+                          ),
+                        ),
+                        child: Row(
+                          crossAxisAlignment: CrossAxisAlignment.start,
+                          children: [
+                            Icon(
+                              LucideIcons.info,
+                              size: 16,
+                              color: colors.primary,
+                            ),
+                            const SizedBox(width: 8),
+                            Expanded(
+                              child: Text(
+                                '提示：首次设置后，您可以随时在「设置」页面中重新修改设备名称与接收目录。',
+                                style: TextStyle(
+                                  fontSize: 11.5,
+                                  height: 1.4,
+                                  color: colors.onSurfaceVariant,
+                                ),
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                      const SizedBox(height: 24),
+                      FilledButton(
+                        onPressed: _submit,
+                        style: FilledButton.styleFrom(
+                          padding: const EdgeInsets.symmetric(vertical: 14),
+                          shape: RoundedRectangleBorder(
+                            borderRadius: BorderRadius.circular(12),
+                          ),
+                        ),
+                        child: const Row(
+                          mainAxisAlignment: MainAxisAlignment.center,
+                          children: [
+                            Icon(LucideIcons.check, size: 18),
+                            SizedBox(width: 8),
+                            Text(
+                              '完成并开启极速传输',
+                              style: TextStyle(
+                                fontSize: 14.5,
+                                fontWeight: FontWeight.w600,
+                              ),
+                            ),
+                          ],
+                        ),
+                      ),
+                    ],
+                  ),
+                ),
+              ),
+            ),
+          ),
+        ),
+      ),
+    );
   }
 }

@@ -41,6 +41,8 @@ pub struct CoreConfig {
     pub theme_mode: String,
     #[serde(default = "default_theme_style")]
     pub theme_style: String,
+    #[serde(default)]
+    pub has_completed_first_setup: bool,
     #[serde(skip)]
     pub identity_wrap_key: Option<Vec<u8>>,
 }
@@ -103,6 +105,7 @@ pub enum CoreEvent {
         auto_accept_trusted: bool,
         theme_mode: String,
         theme_style: String,
+        has_completed_first_setup: bool,
     },
     PeersChanged {
         peers: Vec<PeerSummary>,
@@ -160,6 +163,8 @@ struct PersistedSettings {
     theme_mode: String,
     #[serde(default = "default_theme_style")]
     theme_style: String,
+    #[serde(default)]
+    pub has_completed_first_setup: bool,
 }
 
 struct StoredOutgoingJob {
@@ -190,6 +195,7 @@ impl TransferCore {
             config.auto_accept_trusted = saved.auto_accept_trusted;
             config.theme_mode = saved.theme_mode;
             config.theme_style = saved.theme_style;
+            config.has_completed_first_setup = saved.has_completed_first_setup;
             validate_config(&config)?;
             ensure_receive_directory(&config.receive_directory)?;
         }
@@ -246,6 +252,7 @@ impl TransferCore {
             auto_accept_trusted: effective.auto_accept_trusted,
             theme_mode: effective.theme_mode,
             theme_style: effective.theme_style,
+            has_completed_first_setup: effective.has_completed_first_setup,
         })?;
         inner.queue_event(CoreEvent::Ready)?;
 
@@ -466,6 +473,7 @@ impl TransferCore {
                 auto_accept_trusted: config.auto_accept_trusted,
                 theme_mode: config.theme_mode.clone(),
                 theme_style: config.theme_style.clone(),
+                has_completed_first_setup: config.has_completed_first_setup,
             },
         )?;
         self.inner.lock()?.config = config;
@@ -1093,6 +1101,7 @@ mod tests {
             auto_accept_trusted: false,
             theme_mode: "system".to_owned(),
             theme_style: "radar".to_owned(),
+            has_completed_first_setup: true,
             identity_wrap_key: None,
         }
     }

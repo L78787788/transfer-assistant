@@ -226,6 +226,33 @@ void main() {
     await tester.settleFast();
     expect(find.text('传输会话'), findsOneWidget);
   });
+
+  testWidgets('first launch shows device naming overlay and dismisses on submit', (
+    tester,
+  ) async {
+    final core = _FakeCore()..forceFirstSetup = false;
+    final controller = AppController(
+      core: core,
+      platform: const _FakePlatform(),
+      initialSettings: const AppSettings(
+        deviceName: '我的新设备',
+        receiveDirectory: 'C:/test/downloads',
+        hasCompletedFirstSetup: false,
+      ),
+    );
+
+    await tester.pumpWidget(TransferAssistantApp(controller: controller));
+    await tester.settleFast();
+
+    expect(find.text('欢迎使用传输助手'), findsOneWidget);
+    expect(find.text('完成并开启极速传输'), findsOneWidget);
+
+    await tester.tap(find.text('完成并开启极速传输'));
+    await tester.settleFast();
+
+    expect(controller.settings.hasCompletedFirstSetup, isTrue);
+    expect(find.text('欢迎使用传输助手'), findsNothing);
+  });
 }
 
 class _FakePlatform extends PlatformBridge {
@@ -247,6 +274,7 @@ class _FakePlatform extends PlatformBridge {
 class _FakeCore implements TransferCoreClient {
   final controller = StreamController<CoreEvent>.broadcast();
   var clearedHistory = false;
+  bool? forceFirstSetup;
 
   @override
   Stream<CoreEvent> get events => controller.stream;
@@ -258,6 +286,13 @@ class _FakeCore implements TransferCoreClient {
     String? identityWrapKey,
     String? logDirectory,
   }) async {
+    controller.add(
+      CoreSettingsLoaded(
+        settings.copyWith(
+          hasCompletedFirstSetup: forceFirstSetup ?? true,
+        ),
+      ),
+    );
     controller.add(const CoreReady());
     controller.add(
       const PeersChanged([

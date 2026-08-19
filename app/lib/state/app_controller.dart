@@ -9,7 +9,15 @@ import '../core/transfer_core_client.dart';
 import '../widgets/common.dart';
 
 class AppController extends ChangeNotifier {
-  AppController({required this.core, required this.platform});
+  AppController({
+    required this.core,
+    required this.platform,
+    AppSettings? initialSettings,
+  }) {
+    if (initialSettings != null) {
+      settings = initialSettings;
+    }
+  }
 
   final TransferCoreClient core;
   final PlatformBridge platform;

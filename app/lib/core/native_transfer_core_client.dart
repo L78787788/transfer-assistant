@@ -222,6 +222,7 @@ class NativeTransferCoreClient implements TransferCoreClient {
         autoAcceptTrusted: json['auto_accept_trusted'] == true,
         themeMode: _themeModeFromName(json['theme_mode'] as String?),
         themeStyle: _themeStyleFromName(json['theme_style'] as String?),
+        hasCompletedFirstSetup: json['has_completed_first_setup'] == true,
       ),
     ),
     'peers_changed' => PeersChanged(

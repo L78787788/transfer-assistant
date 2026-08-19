@@ -106,6 +106,8 @@ struct SettingsRequest {
     theme_mode: String,
     #[serde(default = "default_theme_style")]
     theme_style: String,
+    #[serde(default)]
+    has_completed_first_setup: bool,
 }
 
 fn default_theme_mode() -> String {
@@ -138,6 +140,7 @@ pub unsafe extern "C" fn transassist_initialize(request: *const c_char) -> *mut 
             auto_accept_trusted: request.settings.auto_accept_trusted,
             theme_mode: request.settings.theme_mode,
             theme_style: request.settings.theme_style,
+            has_completed_first_setup: request.settings.has_completed_first_setup,
             identity_wrap_key: request
                 .identity_wrap_key
                 .map(|encoded| {
@@ -251,6 +254,7 @@ pub unsafe extern "C" fn transassist_invoke(request: *const c_char) -> *mut c_ch
                 engine.config.auto_accept_trusted = settings.auto_accept_trusted;
                 engine.config.theme_mode = settings.theme_mode;
                 engine.config.theme_style = settings.theme_style;
+                engine.config.has_completed_first_setup = settings.has_completed_first_setup;
                 engine
                     .core
                     .update_settings(engine.config.clone())
