@@ -30,6 +30,10 @@ impl TransferState {
         matches!(self, Self::Completed | Self::Cancelled)
     }
 
+    pub fn is_active(self) -> bool {
+        !matches!(self, Self::Completed | Self::Failed | Self::Cancelled)
+    }
+
     fn can_transition_to(self, next: Self) -> bool {
         use TransferState::*;
         match (self, next) {

@@ -104,10 +104,16 @@ struct SettingsRequest {
     auto_accept_trusted: bool,
     #[serde(default = "default_theme_mode")]
     theme_mode: String,
+    #[serde(default = "default_theme_style")]
+    theme_style: String,
 }
 
 fn default_theme_mode() -> String {
     "system".to_owned()
+}
+
+fn default_theme_style() -> String {
+    "glass".to_owned()
 }
 
 /// Initializes the process-wide transfer core.
@@ -131,6 +137,7 @@ pub unsafe extern "C" fn transassist_initialize(request: *const c_char) -> *mut 
             background_receive: request.settings.background_receive,
             auto_accept_trusted: request.settings.auto_accept_trusted,
             theme_mode: request.settings.theme_mode,
+            theme_style: request.settings.theme_style,
             identity_wrap_key: request
                 .identity_wrap_key
                 .map(|encoded| {
@@ -243,6 +250,7 @@ pub unsafe extern "C" fn transassist_invoke(request: *const c_char) -> *mut c_ch
                 engine.config.background_receive = settings.background_receive;
                 engine.config.auto_accept_trusted = settings.auto_accept_trusted;
                 engine.config.theme_mode = settings.theme_mode;
+                engine.config.theme_style = settings.theme_style;
                 engine
                     .core
                     .update_settings(engine.config.clone())
@@ -261,6 +269,36 @@ pub unsafe extern "C" fn transassist_invoke(request: *const c_char) -> *mut c_ch
                     .remove_trusted_peer(peer_id)
                     .map_err(|error| error.to_string())?;
                 json!({"ok": true, "removed": removed})
+            }
+            "list_history_files" => {
+                let files = engine
+                    .core
+                    .list_history_files()
+                    .map_err(|error| error.to_string())?;
+                json!({"ok": true, "files": files})
+            }
+            "list_transfer_items" => {
+                let transfer_id = parse_uuid(&request, "transfer_id")?;
+                let items = engine
+                    .core
+                    .list_transfer_items(transfer_id)
+                    .map_err(|error| error.to_string())?;
+                json!({"ok": true, "items": items})
+            }
+            "clear_history" => {
+                let count = engine
+                    .core
+                    .clear_history()
+                    .map_err(|error| error.to_string())?;
+                json!({"ok": true, "count": count})
+            }
+            "delete_history_transfer" => {
+                let transfer_id = parse_uuid(&request, "transfer_id")?;
+                let deleted = engine
+                    .core
+                    .delete_history_transfer(transfer_id)
+                    .map_err(|error| error.to_string())?;
+                json!({"ok": true, "deleted": deleted})
             }
             other => return Err(format!("未知命令: {other}")),
         };

@@ -25,6 +25,6 @@ if ($LASTEXITCODE -ne 0) {
     throw "Android Rust core build failed with exit code $LASTEXITCODE"
 }
 
-$destination = Join-Path $repoRoot 'app\build\rustJniLibs\arm64-v8a'
+$destination = Join-Path $repoRoot 'app\android\app\src\main\jniLibs\arm64-v8a'
 New-Item -ItemType Directory -Force -Path $destination | Out-Null
 Copy-Item -LiteralPath (Join-Path $repoRoot 'target\aarch64-linux-android\release\libtransfer_core.so') -Destination $destination -Force

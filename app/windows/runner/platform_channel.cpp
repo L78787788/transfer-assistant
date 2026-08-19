@@ -102,17 +102,71 @@ std::string PickDirectory(HWND window) {
   return SUCCEEDED(dialog->GetResult(&item)) ? DisplayName(item.Get()) : std::string{};
 }
 
+bool SetContextMenu(bool enable) {
+  wchar_t exe_path[MAX_PATH];
+  ::GetModuleFileNameW(nullptr, exe_path, MAX_PATH);
+  std::wstring command = L"\"" + std::wstring(exe_path) + L"\" \"%1\"";
+
+  const wchar_t* file_key = L"Software\\Classes\\*\\shell\\TransferAssistant";
+  const wchar_t* dir_key = L"Software\\Classes\\Directory\\shell\\TransferAssistant";
+
+  if (enable) {
+    HKEY key;
+    if (::RegCreateKeyExW(HKEY_CURRENT_USER, file_key, 0, nullptr, 0, KEY_WRITE, nullptr, &key, nullptr) == ERROR_SUCCESS) {
+      const wchar_t* title = L"使用传输助手发送";
+      ::RegSetValueExW(key, nullptr, 0, REG_SZ, reinterpret_cast<const BYTE*>(title), static_cast<DWORD>((wcslen(title) + 1) * sizeof(wchar_t)));
+      ::RegSetValueExW(key, L"Icon", 0, REG_SZ, reinterpret_cast<const BYTE*>(exe_path), static_cast<DWORD>((wcslen(exe_path) + 1) * sizeof(wchar_t)));
+      HKEY cmd_key;
+      if (::RegCreateKeyExW(key, L"command", 0, nullptr, 0, KEY_WRITE, nullptr, &cmd_key, nullptr) == ERROR_SUCCESS) {
+        ::RegSetValueExW(cmd_key, nullptr, 0, REG_SZ, reinterpret_cast<const BYTE*>(command.c_str()), static_cast<DWORD>((command.length() + 1) * sizeof(wchar_t)));
+        ::RegCloseKey(cmd_key);
+      }
+      ::RegCloseKey(key);
+    }
+    if (::RegCreateKeyExW(HKEY_CURRENT_USER, dir_key, 0, nullptr, 0, KEY_WRITE, nullptr, &key, nullptr) == ERROR_SUCCESS) {
+      const wchar_t* title = L"使用传输助手发送";
+      ::RegSetValueExW(key, nullptr, 0, REG_SZ, reinterpret_cast<const BYTE*>(title), static_cast<DWORD>((wcslen(title) + 1) * sizeof(wchar_t)));
+      ::RegSetValueExW(key, L"Icon", 0, REG_SZ, reinterpret_cast<const BYTE*>(exe_path), static_cast<DWORD>((wcslen(exe_path) + 1) * sizeof(wchar_t)));
+      HKEY cmd_key;
+      if (::RegCreateKeyExW(key, L"command", 0, nullptr, 0, KEY_WRITE, nullptr, &cmd_key, nullptr) == ERROR_SUCCESS) {
+        ::RegSetValueExW(cmd_key, nullptr, 0, REG_SZ, reinterpret_cast<const BYTE*>(command.c_str()), static_cast<DWORD>((command.length() + 1) * sizeof(wchar_t)));
+        ::RegCloseKey(cmd_key);
+      }
+      ::RegCloseKey(key);
+    }
+  } else {
+    ::RegDeleteTreeW(HKEY_CURRENT_USER, file_key);
+    ::RegDeleteTreeW(HKEY_CURRENT_USER, dir_key);
+  }
+  return true;
+}
+
+bool IsContextMenuEnabled() {
+  HKEY key;
+  if (::RegOpenKeyExW(HKEY_CURRENT_USER, L"Software\\Classes\\*\\shell\\TransferAssistant", 0, KEY_READ, &key) == ERROR_SUCCESS) {
+    ::RegCloseKey(key);
+    return true;
+  }
+  return false;
+}
+
+static std::unique_ptr<flutter::MethodChannel<EncodableValue>> g_platform_channel;
+
 }  // namespace
 
 void RegisterPlatformChannel(flutter::FlutterEngine* engine, HWND window,
                              std::function<void(bool)> set_background_receive,
-                             std::function<void(bool)> set_transfer_active) {
-  auto channel = std::make_unique<flutter::MethodChannel<EncodableValue>>(
+                             std::function<void(bool)> set_transfer_active,
+                             std::function<void(const std::string&, const std::string&)> show_tray_notification,
+                             std::function<void(const std::string&)> update_tray_status) {
+  g_platform_channel = std::make_unique<flutter::MethodChannel<EncodableValue>>(
       engine->messenger(), "transassist/platform",
       &flutter::StandardMethodCodec::GetInstance());
-  channel->SetMethodCallHandler(
+  g_platform_channel->SetMethodCallHandler(
       [window, set_background_receive = std::move(set_background_receive),
-       set_transfer_active = std::move(set_transfer_active)](
+       set_transfer_active = std::move(set_transfer_active),
+       show_tray_notification = std::move(show_tray_notification),
+       update_tray_status = std::move(update_tray_status)](
           const flutter::MethodCall<EncodableValue>& call,
           std::unique_ptr<MethodResult> result) {
         if (call.method_name() == "paths") {
@@ -159,8 +213,85 @@ void RegisterPlatformChannel(flutter::FlutterEngine* engine, HWND window,
             set_transfer_active(*active);
             result->Success();
           }
+        } else if (call.method_name() == "showNotification") {
+          const auto* args = std::get_if<EncodableMap>(call.arguments());
+          if (args != nullptr) {
+            std::string title;
+            std::string body;
+            auto title_it = args->find(EncodableValue("title"));
+            if (title_it != args->end() && std::holds_alternative<std::string>(title_it->second)) {
+              title = std::get<std::string>(title_it->second);
+            }
+            auto body_it = args->find(EncodableValue("body"));
+            if (body_it != args->end() && std::holds_alternative<std::string>(body_it->second)) {
+              body = std::get<std::string>(body_it->second);
+            }
+            if (show_tray_notification) {
+              show_tray_notification(title, body);
+            }
+          }
+          result->Success();
+        } else if (call.method_name() == "updateNotificationProgress") {
+          const auto* args = std::get_if<EncodableMap>(call.arguments());
+          if (args != nullptr && update_tray_status) {
+            std::string title = "文件";
+            std::string speed = "0 B/s";
+            int percent = 0;
+            bool active = false;
+
+            auto title_it = args->find(EncodableValue("title"));
+            if (title_it != args->end() && std::holds_alternative<std::string>(title_it->second)) {
+              title = std::get<std::string>(title_it->second);
+            }
+            auto speed_it = args->find(EncodableValue("speed"));
+            if (speed_it != args->end() && std::holds_alternative<std::string>(speed_it->second)) {
+              speed = std::get<std::string>(speed_it->second);
+            }
+            auto percent_it = args->find(EncodableValue("percent"));
+            if (percent_it != args->end() && std::holds_alternative<int>(percent_it->second)) {
+              percent = std::get<int>(percent_it->second);
+            }
+            auto active_it = args->find(EncodableValue("active"));
+            if (active_it != args->end() && std::holds_alternative<bool>(active_it->second)) {
+              active = std::get<bool>(active_it->second);
+            }
+
+            if (active) {
+              std::string status = "传输助手 · 传输中 " + std::to_string(percent) + "% (" + speed + ")";
+              update_tray_status(status);
+            } else {
+              update_tray_status("传输助手");
+            }
+          }
+          result->Success();
+        } else if (call.method_name() == "setContextMenuEnabled") {
+          const bool* enabled = std::get_if<bool>(call.arguments());
+          if (enabled != nullptr) {
+            SetContextMenu(*enabled);
+            result->Success(EncodableValue(*enabled));
+          } else {
+            result->Error("argument", "参数无效");
+          }
+        } else if (call.method_name() == "isContextMenuEnabled") {
+          result->Success(EncodableValue(IsContextMenuEnabled()));
         } else {
           result->NotImplemented();
         }
       });
+}
+
+void NotifyFilesDropped(const std::vector<std::string>& paths) {
+  if (!g_platform_channel || paths.empty()) {
+    return;
+  }
+  flutter::EncodableList list;
+  for (const auto& p : paths) {
+    const auto separator = p.find_last_of("\\/");
+    const std::string name = separator == std::string::npos ? p : p.substr(separator + 1);
+    list.emplace_back(EncodableMap{
+        {EncodableValue("token"), EncodableValue(p)},
+        {EncodableValue("displayName"), EncodableValue(name)},
+    });
+  }
+  g_platform_channel->InvokeMethod("onFilesDropped", std::make_unique<EncodableValue>(list));
 }

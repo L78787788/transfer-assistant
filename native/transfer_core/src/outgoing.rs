@@ -1,10 +1,10 @@
 use std::{
-    collections::HashSet,
+    collections::{HashSet, VecDeque},
     fs::{self, File},
     net::SocketAddr,
     path::{Path, PathBuf},
     sync::{
-        Arc,
+        Arc, Mutex,
         atomic::{AtomicBool, Ordering},
     },
 };
@@ -32,8 +32,8 @@ use crate::{
     storage::{read_chunk, read_sequential_chunk},
     transfer::write_header,
     wire::{
-        connection_open, device_kind, envelope, expect_decision, expect_hello, expect_pairing,
-        expect_result, expect_resume, hello_envelope, offer_envelope, pairing_code,
+        connection_open, control_envelope, device_kind, envelope, expect_decision, expect_hello,
+        expect_pairing, expect_resume, hello_envelope, offer_envelope, pairing_code,
         pairing_confirmation, tls_peer_fingerprint, validate_hello,
     },
 };
@@ -145,7 +145,9 @@ pub(crate) struct OutgoingEntry {
 pub struct JobControl {
     paused: AtomicBool,
     cancelled: AtomicBool,
+    remote_reason: Mutex<Option<String>>,
     changed: Notify,
+    control_tx: Mutex<Option<tokio::sync::mpsc::UnboundedSender<wire::ControlAction>>>,
 }
 
 impl JobControl {
@@ -153,27 +155,85 @@ impl JobControl {
         Self {
             paused: AtomicBool::new(false),
             cancelled: AtomicBool::new(false),
+            remote_reason: Mutex::new(None),
             changed: Notify::new(),
+            control_tx: Mutex::new(None),
         }
+    }
+
+    pub(crate) fn register_channel(
+        &self,
+    ) -> tokio::sync::mpsc::UnboundedReceiver<wire::ControlAction> {
+        let (tx, rx) = tokio::sync::mpsc::unbounded_channel();
+        if let Ok(mut lock) = self.control_tx.lock() {
+            *lock = Some(tx);
+        }
+        rx
     }
 
     pub(crate) fn pause(&self) {
         self.paused.store(true, Ordering::Release);
+        if let Ok(lock) = self.control_tx.lock()
+            && let Some(tx) = lock.as_ref()
+        {
+            let _ = tx.send(wire::ControlAction::Pause);
+        }
     }
 
     pub(crate) fn resume(&self) {
         self.paused.store(false, Ordering::Release);
         self.changed.notify_waiters();
+        if let Ok(lock) = self.control_tx.lock()
+            && let Some(tx) = lock.as_ref()
+        {
+            let _ = tx.send(wire::ControlAction::Resume);
+        }
     }
 
     pub(crate) fn cancel(&self) {
         self.cancelled.store(true, Ordering::Release);
         self.changed.notify_waiters();
+        if let Ok(lock) = self.control_tx.lock()
+            && let Some(tx) = lock.as_ref()
+        {
+            let _ = tx.send(wire::ControlAction::Cancel);
+        }
     }
 
-    async fn checkpoint(&self, inner: &CoreInner) -> Result<(), LanError> {
+    pub(crate) fn pause_from_remote(&self) {
+        self.paused.store(true, Ordering::Release);
+    }
+
+    pub(crate) fn resume_from_remote(&self) {
+        self.paused.store(false, Ordering::Release);
+        self.changed.notify_waiters();
+    }
+
+    pub(crate) fn cancel_from_remote(&self, reason: String) {
+        if let Ok(mut lock) = self.remote_reason.lock() {
+            *lock = Some(reason);
+        }
+        self.cancelled.store(true, Ordering::Release);
+        self.changed.notify_waiters();
+    }
+
+    pub(crate) fn is_cancelled(&self) -> bool {
+        self.cancelled.load(Ordering::Acquire)
+    }
+
+    #[allow(dead_code)]
+    pub(crate) fn is_paused(&self) -> bool {
+        self.paused.load(Ordering::Acquire)
+    }
+
+    pub(crate) async fn checkpoint(&self, inner: &CoreInner) -> Result<(), LanError> {
         loop {
             if self.cancelled.load(Ordering::Acquire) {
+                if let Ok(lock) = self.remote_reason.lock()
+                    && let Some(reason) = lock.as_ref()
+                {
+                    return Err(LanError::RemoteCancelled(reason.clone()));
+                }
                 return Err(LanError::Cancelled);
             }
             if !self.paused.load(Ordering::Acquire) {
@@ -626,20 +686,13 @@ pub(crate) async fn run_outgoing(
     if !jobs.is_empty() && (decision.transfer_token.len() != 32 || channel_count == 0) {
         return Err(LanError::InvalidTransferToken);
     }
+    let shared_jobs = Arc::new(tokio::sync::Mutex::new(VecDeque::from(jobs)));
     let mut tasks = Vec::with_capacity(channel_count);
     for channel_index in 0..channel_count {
-        let assigned = jobs
-            .iter()
-            .skip(channel_index)
-            .step_by(channel_count)
-            .cloned()
-            .collect::<Vec<_>>();
-        if assigned.is_empty() {
-            continue;
-        }
         let channel_inner = inner.clone();
         let channel_job = job.clone();
         let channel_control = control.clone();
+        let channel_jobs = shared_jobs.clone();
         let token = decision.transfer_token.clone();
         tasks.push(tokio::spawn(async move {
             send_data_channel(SendDataChannelRequest {
@@ -649,29 +702,83 @@ pub(crate) async fn run_outgoing(
                 channel_index: channel_index as u32,
                 token,
                 job: channel_job,
-                chunks: assigned,
+                shared_jobs: channel_jobs,
                 control: channel_control,
             })
             .await
         }));
     }
-    for task in tasks {
-        task.await??;
+    let mut control_rx = control.register_channel();
+    let data_tasks_future = async {
+        for task in tasks {
+            task.await??;
+        }
+        Ok::<(), LanError>(())
+    };
+    tokio::pin!(data_tasks_future);
+
+    let mut data_completed = false;
+    loop {
+        tokio::select! {
+            Some(action) = control_rx.recv() => {
+                log::info!("发送 {transfer_id}: 向接收端发送控制指令: {action:?}");
+                let _ = write_envelope(&mut tls, &control_envelope(transfer_id, action)).await;
+                if action == wire::ControlAction::Cancel {
+                    return Err(LanError::Cancelled);
+                }
+            }
+            envelope_res = read_envelope(&mut tls) => {
+                let envelope = match envelope_res {
+                    Ok(env) => env,
+                    Err(err) => {
+                        if control.is_cancelled() {
+                            return Err(LanError::Cancelled);
+                        }
+                        if inner.transfer_is_cancelled(transfer_id) {
+                            return Err(LanError::RemoteCancelled("对方已取消传输".to_owned()));
+                        }
+                        return Err(err.into());
+                    }
+                };
+                match envelope.payload {
+                    Some(wire::envelope::Payload::TransferControl(ctrl)) => {
+                        match wire::ControlAction::try_from(ctrl.action) {
+                            Ok(wire::ControlAction::Pause) => {
+                                log::info!("发送 {transfer_id}: 收到接收端暂停指令");
+                                inner.pause_from_remote(transfer_id)?;
+                            }
+                            Ok(wire::ControlAction::Resume) => {
+                                log::info!("发送 {transfer_id}: 收到接收端继续指令");
+                                inner.resume_from_remote(transfer_id)?;
+                            }
+                            Ok(wire::ControlAction::Cancel) => {
+                                log::info!("发送 {transfer_id}: 收到接收端取消指令");
+                                inner.cancel_from_remote(transfer_id, "对方已取消传输")?;
+                                return Err(LanError::RemoteCancelled("对方已取消传输".to_owned()));
+                            }
+                            _ => {}
+                        }
+                    }
+                    Some(wire::envelope::Payload::TransferResult(result)) => {
+                        if !result.completed {
+                            return Err(LanError::RemoteTransferFailed(result.error));
+                        }
+                        inner.transition_transfer(transfer_id, TransferState::Verifying)?;
+                        inner.transition_transfer(transfer_id, TransferState::Completed)?;
+                        log::info!("发送 {transfer_id}: 任务完成");
+                        return Ok(());
+                    }
+                    _ => {}
+                }
+            }
+            res = &mut data_tasks_future, if !data_completed => {
+                res?;
+                data_completed = true;
+                log::info!("发送 {transfer_id}: 数据通道完成，等待结果");
+            }
+            () = inner.shutdown.cancelled() => return Err(LanError::Stopped),
+        }
     }
-    log::info!("发送 {transfer_id}: 数据通道完成，等待结果");
-    // 接收端整理落盘（rename）可能耗时，给一个宽松超时避免无限卡死。
-    let envelope =
-        tokio::time::timeout(std::time::Duration::from_secs(60), read_envelope(&mut tls))
-            .await
-            .map_err(|_| LanError::Core("等待接收方确认超时".to_owned()))??;
-    let result = expect_result(envelope)?;
-    if !result.completed {
-        return Err(LanError::RemoteTransferFailed(result.error));
-    }
-    inner.transition_transfer(transfer_id, TransferState::Verifying)?;
-    inner.transition_transfer(transfer_id, TransferState::Completed)?;
-    log::info!("发送 {transfer_id}: 任务完成");
-    Ok(())
 }
 
 struct SendDataChannelRequest {
@@ -681,8 +788,31 @@ struct SendDataChannelRequest {
     channel_index: u32,
     token: Vec<u8>,
     job: Arc<OutgoingJob>,
-    chunks: Vec<ChunkJob>,
+    shared_jobs: Arc<tokio::sync::Mutex<VecDeque<ChunkJob>>>,
     control: Arc<JobControl>,
+}
+
+async fn read_chunk_job(
+    job: &OutgoingJob,
+    chunk_job: &ChunkJob,
+) -> Result<crate::storage::VerifiedChunk, LanError> {
+    let entry = &job.entries[chunk_job.entry_index];
+    verify_source_revision(entry)?;
+    let source = entry
+        .source_file
+        .as_ref()
+        .ok_or(LanError::MissingSourcePath)?
+        .try_clone()?;
+    let spec = chunk_job.spec;
+    let random_access = entry.random_access;
+    tokio::task::spawn_blocking(move || {
+        if random_access {
+            read_chunk(&source, spec).map_err(LanError::from)
+        } else {
+            read_sequential_chunk(&source, spec).map_err(LanError::from)
+        }
+    })
+    .await?
 }
 
 async fn send_data_channel(request: SendDataChannelRequest) -> Result<(), LanError> {
@@ -693,7 +823,7 @@ async fn send_data_channel(request: SendDataChannelRequest) -> Result<(), LanErr
         channel_index,
         token,
         job,
-        chunks,
+        shared_jobs,
         control,
     } = request;
     let connector = TlsConnector::from(Arc::new(inner.identity.client_config()?));
@@ -711,25 +841,49 @@ async fn send_data_channel(request: SendDataChannelRequest) -> Result<(), LanErr
         ),
     )
     .await?;
-    for chunk_job in chunks {
+
+    // 双缓冲流水线：持有下一块的异步读取与 BLAKE3 计算任务句柄
+    let mut prefetched: Option<
+        tokio::task::JoinHandle<Result<(ChunkJob, crate::storage::VerifiedChunk), LanError>>,
+    > = None;
+
+    loop {
         control.checkpoint(&inner).await?;
-        let entry = &job.entries[chunk_job.entry_index];
-        verify_source_revision(entry)?;
-        let source = entry
-            .source_file
-            .as_ref()
-            .ok_or(LanError::MissingSourcePath)?
-            .try_clone()?;
-        let spec = chunk_job.spec;
-        let random_access = entry.random_access;
-        let chunk = tokio::task::spawn_blocking(move || {
-            if random_access {
-                read_chunk(&source, spec).map_err(LanError::from)
-            } else {
-                read_sequential_chunk(&source, spec).map_err(LanError::from)
+
+        // 1. 获取当前要发送的块（若有预取好的直接使用，否则从共享工作池拉取）
+        let (chunk_job, chunk) = match prefetched.take() {
+            Some(handle) => handle
+                .await
+                .map_err(|e| std::io::Error::other(e.to_string()))??,
+            None => {
+                let next_job = {
+                    let mut queue = shared_jobs.lock().await;
+                    queue.pop_front()
+                };
+                let Some(job_item) = next_job else {
+                    // 工作池已清空，正常退出
+                    break;
+                };
+                let chunk_data = read_chunk_job(&job, &job_item).await?;
+                (job_item, chunk_data)
             }
-        })
-        .await??;
+        };
+
+        // 2. 在开始网络写入的同时，预先拉取下一个任务并启动后台异步读取（实现 I/O 与网络重叠）
+        let next_job = {
+            let mut queue = shared_jobs.lock().await;
+            queue.pop_front()
+        };
+        if let Some(next_item) = next_job {
+            let job_clone = job.clone();
+            prefetched = Some(tokio::spawn(async move {
+                let c = read_chunk_job(&job_clone, &next_item).await?;
+                Ok((next_item, c))
+            }));
+        }
+
+        // 3. 网络写入当前块
+        let entry = &job.entries[chunk_job.entry_index];
         let header = wire::ChunkHeader {
             transfer_id: transfer_id.to_string(),
             item_id: entry.item_id.clone(),

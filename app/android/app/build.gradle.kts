@@ -31,7 +31,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.transassist.transfer_assistant"
+        applicationId = "com.transassist.app"
         minSdk = 28
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode
@@ -63,10 +63,6 @@ android {
                 "proguard-rules.pro",
             )
         }
-    }
-
-    sourceSets {
-        getByName("main").jniLibs.srcDir("../../build/rustJniLibs")
     }
 }
 

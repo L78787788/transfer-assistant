@@ -20,6 +20,7 @@ dist/
 *.jks
 *.keystore
 key.properties
+app/transfer_core.dll
 
 # OS files
 .DS_Store

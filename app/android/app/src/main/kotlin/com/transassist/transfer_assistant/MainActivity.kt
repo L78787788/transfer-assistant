@@ -5,6 +5,7 @@ import android.Manifest
 import android.content.Intent
 import android.content.pm.PackageManager
 import android.net.Uri
+import android.net.wifi.WifiManager
 import android.os.Build
 import android.os.Environment
 import android.os.ParcelFileDescriptor
@@ -20,6 +21,72 @@ import java.io.File
 class MainActivity : FlutterActivity() {
     private var pendingResult: MethodChannel.Result? = null
     private var pendingMode: PickerMode? = null
+    private var multicastLock: WifiManager.MulticastLock? = null
+    private var sharedPayload: Map<String, Any?>? = null
+
+    override fun onCreate(savedInstanceState: android.os.Bundle?) {
+        super.onCreate(savedInstanceState)
+        handleShareIntent(intent)
+    }
+
+    override fun onNewIntent(intent: Intent) {
+        super.onNewIntent(intent)
+        setIntent(intent)
+        handleShareIntent(intent)
+    }
+
+    private fun handleShareIntent(intent: Intent?) {
+        if (intent == null) return
+        when (intent.action) {
+            Intent.ACTION_SEND -> {
+                val text = intent.getStringExtra(Intent.EXTRA_TEXT)
+                val uri = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableExtra(Intent.EXTRA_STREAM)
+                }
+                if (uri != null) {
+                    sharedPayload = mapOf("type" to "files", "paths" to listOf("android-saf:$uri"))
+                } else if (!text.isNullOrBlank()) {
+                    sharedPayload = mapOf("type" to "text", "text" to text)
+                }
+            }
+            Intent.ACTION_SEND_MULTIPLE -> {
+                val uris = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM, Uri::class.java)
+                } else {
+                    @Suppress("DEPRECATION")
+                    intent.getParcelableArrayListExtra(Intent.EXTRA_STREAM)
+                }
+                if (!uris.isNullOrEmpty()) {
+                    val list = uris.map { "android-saf:$it" }
+                    sharedPayload = mapOf("type" to "files", "paths" to list)
+                }
+            }
+        }
+    }
+
+    override fun onResume() {
+        super.onResume()
+        acquireMulticastLock()
+    }
+
+    private fun acquireMulticastLock() {
+        if (multicastLock?.isHeld == true) return
+        multicastLock?.takeIf { it.isHeld }?.release()
+        val wifi = applicationContext.getSystemService(WIFI_SERVICE) as WifiManager
+        multicastLock = wifi.createMulticastLock("transassist-foreground-discovery").apply {
+            setReferenceCounted(false)
+            acquire()
+        }
+    }
+
+    override fun onPause() {
+        multicastLock?.takeIf { it.isHeld }?.release()
+        multicastLock = null
+        super.onPause()
+    }
 
     override fun configureFlutterEngine(flutterEngine: FlutterEngine) {
         super.configureFlutterEngine(flutterEngine)
@@ -46,6 +113,47 @@ class MainActivity : FlutterActivity() {
                 "setTransferActive" -> {
                     val active = call.arguments as? Boolean ?: false
                     TransferForegroundService.setTransferActive(this, active)
+                    result.success(null)
+                }
+                "showNotification" -> {
+                    val title = call.argument<String>("title") ?: "传输助手"
+                    val body = call.argument<String>("body") ?: ""
+                    TransferForegroundService.showTransferNotification(this, title, body)
+                    result.success(null)
+                }
+                "updateNotificationProgress" -> {
+                    val title = call.argument<String>("title") ?: "文件"
+                    val speed = call.argument<String>("speed") ?: "0 B/s"
+                    val percent = call.argument<Int>("percent") ?: 0
+                    val active = call.argument<Boolean>("active") ?: false
+                    TransferForegroundService.updateProgressNotification(this, title, speed, percent, active)
+                    result.success(null)
+                }
+                "openFile" -> {
+                    val rawPath = call.argument<String>("path") ?: ""
+                    openAndroidFile(rawPath)
+                    result.success(null)
+                }
+                "installApk" -> {
+                    val rawPath = call.argument<String>("path") ?: ""
+                    installAndroidApk(rawPath)
+                    result.success(null)
+                }
+                "shareFile" -> {
+                    val rawPath = call.argument<String>("path") ?: ""
+                    shareAndroidFile(rawPath)
+                    result.success(null)
+                }
+                "openDirectory" -> {
+                    val rawPath = call.argument<String>("path") ?: ""
+                    openAndroidDirectory(rawPath)
+                    result.success(null)
+                }
+                "getSharedPayload" -> {
+                    result.success(sharedPayload)
+                }
+                "clearSharedPayload" -> {
+                    sharedPayload = null
                     result.success(null)
                 }
                 else -> result.notImplemented()
@@ -278,13 +386,283 @@ class MainActivity : FlutterActivity() {
             ) {
                 add(Manifest.permission.POST_NOTIFICATIONS)
             }
-            if (Build.VERSION.SDK_INT >= 36 &&
-                checkSelfPermission("android.permission.ACCESS_LOCAL_NETWORK") != PackageManager.PERMISSION_GRANTED
-            ) {
-                add("android.permission.ACCESS_LOCAL_NETWORK")
-            }
         }
         if (permissions.isNotEmpty()) requestPermissions(permissions.toTypedArray(), REQUEST_PERMISSIONS)
+    }
+
+    private fun openAndroidFile(rawPath: String) {
+        if (rawPath.isBlank()) return
+        try {
+            var uri: Uri? = null
+
+            if (rawPath.startsWith("android-saf:")) {
+                uri = Uri.parse(rawPath.removePrefix("android-saf:"))
+            } else if (rawPath.startsWith("content://")) {
+                uri = Uri.parse(rawPath)
+            } else {
+                var file = File(rawPath)
+                if (!file.exists()) {
+                    val defaultFile = File(defaultReceiveDirectory(), rawPath)
+                    if (defaultFile.exists()) {
+                        file = defaultFile
+                    }
+                }
+                if (file.exists()) {
+                    uri = androidx.core.content.FileProvider.getUriForFile(
+                        this,
+                        "$packageName.fileprovider",
+                        file,
+                    )
+                }
+            }
+
+            if (uri == null) {
+                android.util.Log.w("MainActivity", "无法解析文件 URI: $rawPath")
+                return
+            }
+
+            val mimeType = resolveMimeType(rawPath, uri)
+
+            // 1. 尝试直接以 ACTION_VIEW 打开
+            val viewIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, mimeType)
+                addFlags(
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_GRANT_WRITE_URI_PERMISSION or
+                        Intent.FLAG_ACTIVITY_NEW_TASK,
+                )
+            }
+
+            try {
+                startActivity(viewIntent)
+                return
+            } catch (_: Exception) {
+                // 2. 回退到系统打开方式选择器 Chooser
+                try {
+                    val chooserIntent = Intent.createChooser(viewIntent, "选择打开方式").apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    }
+                    startActivity(chooserIntent)
+                    return
+                } catch (_: Exception) {}
+            }
+
+            // 3. 回退到系统分享面板打开
+            try {
+                val sendIntent = Intent(Intent.ACTION_SEND).apply {
+                    type = mimeType
+                    putExtra(Intent.EXTRA_STREAM, uri)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(
+                    Intent.createChooser(sendIntent, "打开或发送文件").apply {
+                        addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    },
+                )
+            } catch (e: Exception) {
+                android.util.Log.e("MainActivity", "打开文件全部失败: $rawPath", e)
+            }
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "打开文件异常: $rawPath", e)
+        }
+    }
+
+    private fun resolveMimeType(pathOrUri: String, uri: Uri?): String {
+        if (uri != null) {
+            try {
+                val queried = contentResolver.getType(uri)
+                if (!queried.isNullOrBlank() && queried != "*/*") {
+                    return queried
+                }
+            } catch (_: Exception) {}
+        }
+
+        val cleanName = pathOrUri.substringBefore('?').substringBefore('#')
+        val ext = if (cleanName.contains('.')) {
+            cleanName.substringAfterLast('.').lowercase()
+        } else ""
+
+        return when (ext) {
+            "apk" -> "application/vnd.android.package-archive"
+            "png" -> "image/png"
+            "jpg", "jpeg" -> "image/jpeg"
+            "gif" -> "image/gif"
+            "webp" -> "image/webp"
+            "bmp" -> "image/bmp"
+            "svg" -> "image/svg+xml"
+            "mp4" -> "video/mp4"
+            "mkv" -> "video/x-matroska"
+            "avi" -> "video/x-msvideo"
+            "mov" -> "video/quicktime"
+            "flv" -> "video/x-flv"
+            "mp3" -> "audio/mpeg"
+            "wav" -> "audio/x-wav"
+            "flac" -> "audio/flac"
+            "aac" -> "audio/aac"
+            "m4a" -> "audio/mp4"
+            "ogg" -> "audio/ogg"
+            "pdf" -> "application/pdf"
+            "txt", "log" -> "text/plain"
+            "json" -> "application/json"
+            "html", "htm" -> "text/html"
+            "zip" -> "application/zip"
+            "rar" -> "application/x-rar-compressed"
+            "7z" -> "application/x-7z-compressed"
+            "tar" -> "application/x-tar"
+            "gz" -> "application/gzip"
+            "doc" -> "application/msword"
+            "docx" -> "application/vnd.openxmlformats-officedocument.wordprocessingml.document"
+            "xls" -> "application/vnd.ms-excel"
+            "xlsx" -> "application/vnd.openxmlformats-officedocument.spreadsheetml.sheet"
+            "ppt" -> "application/vnd.ms-powerpoint"
+            "pptx" -> "application/vnd.openxmlformats-officedocument.presentationml.presentation"
+            else -> {
+                if (ext.isNotBlank()) {
+                    android.webkit.MimeTypeMap.getSingleton().getMimeTypeFromExtension(ext) ?: "*/*"
+                } else "*/*"
+            }
+        }
+    }
+
+    private fun openAndroidDirectory(rawPath: String) {
+        // 1. 如果配置了 SAF treeUri，优先通过 DocumentsContract 打开对应目录
+        if (rawPath.startsWith("android-saf:")) {
+            try {
+                val treeUri = Uri.parse(rawPath.removePrefix("android-saf:"))
+                val docId = DocumentsContract.getTreeDocumentId(treeUri)
+                val docUri = DocumentsContract.buildDocumentUriUsingTree(treeUri, docId)
+                val intent = Intent(Intent.ACTION_VIEW).apply {
+                    setDataAndType(docUri, DocumentsContract.Document.MIME_TYPE_DIR)
+                    addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+                }
+                startActivity(intent)
+                return
+            } catch (_: Exception) {}
+        }
+
+        // 2. 尝试拉起各手机厂商内置系统「文件管理」应用 (Vivo、小米、华为、OPPO、三星、原生等)
+        val knownFileManagerPackages = listOf(
+            "com.android.filemanager",               // Vivo / 小米 / 原生
+            "com.vivo.filemanager",                  // Vivo 专有
+            "com.mi.android.globalFileexplorer",     // 小米国际版
+            "com.huawei.hidisk",                     // 华为
+            "com.hihonor.filemanager",               // 荣耀
+            "com.coloros.filemanager",               // OPPO / Realme / OnePlus
+            "com.oneplus.filemanager",               // 一加
+            "com.sec.android.app.myfiles",           // 三星
+            "com.google.android.documentsui",        // Google 原生 Files
+            "com.android.documentsui",               // AOSP 文档
+            "com.rarlab.rar",                        // RAR / 文件管理
+            "com.estrongs.android.pop",              // ES 文件浏览器
+            "pl.solidexplorer2"                      // Solid Explorer
+        )
+
+        for (pkg in knownFileManagerPackages) {
+            try {
+                val launchIntent = packageManager.getLaunchIntentForPackage(pkg)
+                if (launchIntent != null) {
+                    launchIntent.addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+                    startActivity(launchIntent)
+                    return
+                }
+            } catch (_: Exception) {}
+        }
+
+        // 3. 尝试使用系统下载管理界面
+        try {
+            val downloadIntent = Intent(android.app.DownloadManager.ACTION_VIEW_DOWNLOADS).apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(downloadIntent)
+            return
+        } catch (_: Exception) {}
+
+        // 4. 尝试通用 Document Root 浏览
+        try {
+            val rootIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(
+                    Uri.parse("content://com.android.externalstorage.documents/root/primary"),
+                    "vnd.android.document/root",
+                )
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(rootIntent)
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "打开文件管理器失败: $rawPath", e)
+        }
+    }
+
+    private fun installAndroidApk(rawPath: String) {
+        if (rawPath.isBlank()) return
+        try {
+            var uri: Uri? = null
+            if (rawPath.startsWith("android-saf:") || rawPath.startsWith("content://")) {
+                val s = if (rawPath.startsWith("android-saf:")) rawPath.removePrefix("android-saf:") else rawPath
+                uri = Uri.parse(s)
+            } else {
+                var file = File(rawPath)
+                if (!file.exists()) {
+                    val defaultFile = File(defaultReceiveDirectory(), rawPath)
+                    if (defaultFile.exists()) file = defaultFile
+                }
+                if (file.exists()) {
+                    uri = androidx.core.content.FileProvider.getUriForFile(
+                        this,
+                        "$packageName.fileprovider",
+                        file,
+                    )
+                }
+            }
+            if (uri == null) return
+
+            val installIntent = Intent(Intent.ACTION_VIEW).apply {
+                setDataAndType(uri, "application/vnd.android.package-archive")
+                addFlags(
+                    Intent.FLAG_GRANT_READ_URI_PERMISSION or
+                        Intent.FLAG_ACTIVITY_NEW_TASK or
+                        Intent.FLAG_ACTIVITY_CLEAR_TOP,
+                )
+            }
+            startActivity(installIntent)
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "安装 APK 异常: $rawPath", e)
+        }
+    }
+
+    private fun shareAndroidFile(rawPath: String) {
+        if (rawPath.isBlank()) return
+        try {
+            var uri: Uri? = null
+            if (rawPath.startsWith("android-saf:") || rawPath.startsWith("content://")) {
+                val s = if (rawPath.startsWith("android-saf:")) rawPath.removePrefix("android-saf:") else rawPath
+                uri = Uri.parse(s)
+            } else {
+                var file = File(rawPath)
+                if (!file.exists()) {
+                    val defaultFile = File(defaultReceiveDirectory(), rawPath)
+                    if (defaultFile.exists()) file = defaultFile
+                }
+                if (file.exists()) {
+                    uri = androidx.core.content.FileProvider.getUriForFile(
+                        this,
+                        "$packageName.fileprovider",
+                        file,
+                    )
+                }
+            }
+            if (uri == null) return
+            val mimeType = resolveMimeType(rawPath, uri)
+            val shareIntent = Intent(Intent.ACTION_SEND).apply {
+                type = mimeType
+                putExtra(Intent.EXTRA_STREAM, uri)
+                addFlags(Intent.FLAG_GRANT_READ_URI_PERMISSION or Intent.FLAG_ACTIVITY_NEW_TASK)
+            }
+            startActivity(Intent.createChooser(shareIntent, "分享文件").apply {
+                addFlags(Intent.FLAG_ACTIVITY_NEW_TASK)
+            })
+        } catch (e: Exception) {
+            android.util.Log.e("MainActivity", "分享文件异常: $rawPath", e)
+        }
     }
 
     private enum class PickerMode { FILES, SOURCE_DIRECTORY, RECEIVE_DIRECTORY }

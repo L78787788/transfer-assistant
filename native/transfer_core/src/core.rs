@@ -22,7 +22,7 @@ use uuid::Uuid;
 
 use crate::{
     identity::{DeviceIdentity, IdentityError},
-    lan::{self, JobControl, NetworkHandle, OutgoingJob},
+    lan::{self, JobControl, LanError, NetworkHandle, OutgoingJob},
     model::{
         LifecycleError, TransferCommand, TransferDirection, TransferSnapshot, TransferState,
         TrustedPeer,
@@ -39,12 +39,18 @@ pub struct CoreConfig {
     pub auto_accept_trusted: bool,
     #[serde(default = "default_theme_mode")]
     pub theme_mode: String,
+    #[serde(default = "default_theme_style")]
+    pub theme_style: String,
     #[serde(skip)]
     pub identity_wrap_key: Option<Vec<u8>>,
 }
 
 fn default_theme_mode() -> String {
     "system".to_owned()
+}
+
+fn default_theme_style() -> String {
+    "radar".to_owned()
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -96,6 +102,7 @@ pub enum CoreEvent {
         background_receive: bool,
         auto_accept_trusted: bool,
         theme_mode: String,
+        theme_style: String,
     },
     PeersChanged {
         peers: Vec<PeerSummary>,
@@ -133,12 +140,14 @@ struct CoreState {
     events: VecDeque<CoreEvent>,
     pending_answers: HashMap<Uuid, oneshot::Sender<OfferAnswer>>,
     outgoing_jobs: HashMap<Uuid, StoredOutgoingJob>,
+    incoming_controls: HashMap<Uuid, Arc<JobControl>>,
     progress_samples: HashMap<Uuid, ProgressSample>,
 }
 
 struct ProgressSample {
     at: Instant,
     completed_bytes: u64,
+    last_saved_at: Instant,
 }
 
 #[derive(Debug, Clone, Serialize, Deserialize)]
@@ -149,6 +158,8 @@ struct PersistedSettings {
     auto_accept_trusted: bool,
     #[serde(default = "default_theme_mode")]
     theme_mode: String,
+    #[serde(default = "default_theme_style")]
+    theme_style: String,
 }
 
 struct StoredOutgoingJob {
@@ -178,6 +189,7 @@ impl TransferCore {
             config.background_receive = saved.background_receive;
             config.auto_accept_trusted = saved.auto_accept_trusted;
             config.theme_mode = saved.theme_mode;
+            config.theme_style = saved.theme_style;
             validate_config(&config)?;
             ensure_receive_directory(&config.receive_directory)?;
         }
@@ -221,6 +233,7 @@ impl TransferCore {
                 events: VecDeque::new(),
                 pending_answers: HashMap::new(),
                 outgoing_jobs: HashMap::new(),
+                incoming_controls: HashMap::new(),
                 progress_samples: HashMap::new(),
             }),
         });
@@ -232,6 +245,7 @@ impl TransferCore {
             background_receive: effective.background_receive,
             auto_accept_trusted: effective.auto_accept_trusted,
             theme_mode: effective.theme_mode,
+            theme_style: effective.theme_style,
         })?;
         inner.queue_event(CoreEvent::Ready)?;
 
@@ -249,6 +263,14 @@ impl TransferCore {
 
     pub fn refresh_peers(&self) -> Result<(), CoreError> {
         self.ensure_running()?;
+        if let Some(network) = self
+            .network
+            .lock()
+            .map_err(|_| CoreError::LockPoisoned)?
+            .as_ref()
+        {
+            network.refresh_peers();
+        }
         self.inner.queue_peers_changed()
     }
 
@@ -348,10 +370,22 @@ impl TransferCore {
             if transfer.state != TransferState::Transferring {
                 transfer.bytes_per_second = 0;
             }
+            if command == TransferCommand::Cancel {
+                transfer.error = Some("已取消".to_owned());
+            }
             transfer.updated_unix_ms = now_unix_ms();
             cancel_incoming = command == TransferCommand::Cancel
                 && transfer.direction == TransferDirection::Incoming;
             self.inner.repository.save_transfer(transfer)?;
+
+            if let Some(control) = state.incoming_controls.get(&transfer_id) {
+                match command {
+                    TransferCommand::Pause => control.pause(),
+                    TransferCommand::Resume => control.resume(),
+                    TransferCommand::Cancel => control.cancel(),
+                    TransferCommand::Retry => {}
+                }
+            }
 
             retry = match state.outgoing_jobs.get_mut(&transfer_id) {
                 Some(stored) => {
@@ -431,6 +465,7 @@ impl TransferCore {
                 background_receive: config.background_receive,
                 auto_accept_trusted: config.auto_accept_trusted,
                 theme_mode: config.theme_mode.clone(),
+                theme_style: config.theme_style.clone(),
             },
         )?;
         self.inner.lock()?.config = config;
@@ -465,6 +500,42 @@ impl TransferCore {
         Ok(removed)
     }
 
+    pub fn list_history_files(
+        &self,
+    ) -> Result<Vec<crate::persistence::HistoryFileRecord>, CoreError> {
+        self.ensure_running()?;
+        Ok(self.inner.repository.list_history_files()?)
+    }
+
+    pub fn list_transfer_items(
+        &self,
+        transfer_id: Uuid,
+    ) -> Result<Vec<crate::persistence::StoredTransferItem>, CoreError> {
+        self.ensure_running()?;
+        Ok(self.inner.repository.list_items(transfer_id)?)
+    }
+
+    pub fn clear_history(&self) -> Result<usize, CoreError> {
+        self.ensure_running()?;
+        let count = self.inner.repository.clear_history()?;
+        let mut state = self.inner.lock()?;
+        state.transfers.retain(|_, t| t.state.is_active());
+        queue_transfers_changed(&mut state);
+        Ok(count)
+    }
+
+    pub fn delete_history_transfer(&self, transfer_id: Uuid) -> Result<bool, CoreError> {
+        self.ensure_running()?;
+        let id_str = transfer_id.to_string();
+        let deleted = self.inner.repository.delete_history_transfer(&id_str)?;
+        if deleted {
+            let mut state = self.inner.lock()?;
+            state.transfers.remove(&transfer_id);
+            queue_transfers_changed(&mut state);
+        }
+        Ok(deleted)
+    }
+
     pub fn shutdown(&self) -> Result<(), CoreError> {
         if self.stopped.swap(true, Ordering::AcqRel) {
             return Ok(());
@@ -494,10 +565,20 @@ impl TransferCore {
             if let Err(error) =
                 lan::run_outgoing(inner.clone(), transfer_id, peer, job, control).await
             {
-                log::warn!("发送任务失败 {transfer_id}: {error}");
-                if error.is_retryable() {
+                if error.is_cancelled() {
+                    log::info!("发送任务已取消 {transfer_id}: {error}");
+                    let _ = inner.cancel_transfer_with_error(
+                        transfer_id,
+                        match error {
+                            LanError::RemoteCancelled(reason) => reason,
+                            _ => "已取消".to_owned(),
+                        },
+                    );
+                } else if error.is_retryable() {
+                    log::warn!("发送任务中断 {transfer_id}: {error}");
                     let _ = inner.interrupt_transfer(transfer_id, error.to_string());
                 } else {
+                    log::warn!("发送任务失败 {transfer_id}: {error}");
                     let _ = inner.fail_transfer(transfer_id, error.to_string());
                 }
             }
@@ -617,6 +698,7 @@ impl CoreInner {
         let sample = state.progress_samples.entry(id).or_insert(ProgressSample {
             at: now,
             completed_bytes: previous_completed,
+            last_saved_at: now,
         });
         let elapsed = now.duration_since(sample.at);
         let speed = if elapsed >= Duration::from_millis(250) {
@@ -627,6 +709,14 @@ impl CoreInner {
         } else {
             current_speed
         };
+
+        // 关键性能优化：节流写入 SQLite。避免高并发/高速网络下逐块频繁同步触发磁盘 SQLite 写事务
+        let should_save_db = completed >= total_bytes
+            || now.duration_since(sample.last_saved_at) >= Duration::from_millis(500);
+        if should_save_db {
+            sample.last_saved_at = now;
+        }
+
         let transfer = state
             .transfers
             .get_mut(&id)
@@ -634,7 +724,9 @@ impl CoreInner {
         transfer.completed_bytes = completed;
         transfer.bytes_per_second = speed;
         transfer.updated_unix_ms = now_unix_ms();
-        self.repository.save_transfer(transfer)?;
+        if should_save_db {
+            self.repository.save_transfer(transfer)?;
+        }
         queue_transfers_changed(&mut state);
         Ok(())
     }
@@ -653,11 +745,13 @@ impl CoreInner {
             self.repository.save_transfer(transfer)?;
             completed
         };
+        let now = Instant::now();
         state.progress_samples.insert(
             id,
             ProgressSample {
-                at: Instant::now(),
+                at: now,
                 completed_bytes: completed,
+                last_saved_at: now,
             },
         );
         queue_transfers_changed(&mut state);
@@ -772,6 +866,95 @@ impl CoreInner {
         })
     }
 
+    pub(crate) fn cancel_transfer_with_error(
+        &self,
+        id: Uuid,
+        message: String,
+    ) -> Result<(), CoreError> {
+        self.update_transfer(id, |transfer| {
+            if !transfer.state.is_terminal() {
+                transfer.state = TransferState::Cancelled;
+                transfer.bytes_per_second = 0;
+                transfer.error = Some(message);
+            }
+            Ok(())
+        })
+    }
+
+    pub(crate) fn register_incoming_control(
+        &self,
+        id: Uuid,
+        control: Arc<JobControl>,
+    ) -> Result<(), CoreError> {
+        self.lock()?.incoming_controls.insert(id, control);
+        Ok(())
+    }
+
+    pub(crate) fn unregister_incoming_control(&self, id: Uuid) -> Result<(), CoreError> {
+        self.lock()?.incoming_controls.remove(&id);
+        Ok(())
+    }
+
+    pub(crate) fn pause_from_remote(&self, id: Uuid) -> Result<(), CoreError> {
+        let mut state = self.lock()?;
+        if let Some(stored) = state.outgoing_jobs.get(&id) {
+            stored.control.pause_from_remote();
+        }
+        if let Some(control) = state.incoming_controls.get(&id) {
+            control.pause_from_remote();
+        }
+        if let Some(transfer) = state.transfers.get_mut(&id)
+            && !transfer.state.is_terminal()
+        {
+            transfer.state = TransferState::Paused;
+            transfer.bytes_per_second = 0;
+            transfer.updated_unix_ms = now_unix_ms();
+            self.repository.save_transfer(transfer)?;
+        }
+        queue_transfers_changed(&mut state);
+        Ok(())
+    }
+
+    pub(crate) fn resume_from_remote(&self, id: Uuid) -> Result<(), CoreError> {
+        let mut state = self.lock()?;
+        if let Some(stored) = state.outgoing_jobs.get(&id) {
+            stored.control.resume_from_remote();
+        }
+        if let Some(control) = state.incoming_controls.get(&id) {
+            control.resume_from_remote();
+        }
+        if let Some(transfer) = state.transfers.get_mut(&id)
+            && transfer.state == TransferState::Paused
+        {
+            transfer.state = TransferState::Transferring;
+            transfer.updated_unix_ms = now_unix_ms();
+            self.repository.save_transfer(transfer)?;
+        }
+        queue_transfers_changed(&mut state);
+        Ok(())
+    }
+
+    pub(crate) fn cancel_from_remote(&self, id: Uuid, reason: &str) -> Result<(), CoreError> {
+        let mut state = self.lock()?;
+        if let Some(stored) = state.outgoing_jobs.get(&id) {
+            stored.control.cancel_from_remote(reason.to_owned());
+        }
+        if let Some(control) = state.incoming_controls.get(&id) {
+            control.cancel_from_remote(reason.to_owned());
+        }
+        if let Some(transfer) = state.transfers.get_mut(&id)
+            && !transfer.state.is_terminal()
+        {
+            transfer.state = TransferState::Cancelled;
+            transfer.bytes_per_second = 0;
+            transfer.error = Some(reason.to_owned());
+            transfer.updated_unix_ms = now_unix_ms();
+            self.repository.save_transfer(transfer)?;
+        }
+        queue_transfers_changed(&mut state);
+        Ok(())
+    }
+
     fn update_transfer(
         &self,
         id: Uuid,
@@ -800,6 +983,12 @@ fn validate_config(config: &CoreConfig) -> Result<(), CoreError> {
     }
     if !matches!(config.theme_mode.as_str(), "system" | "light" | "dark") {
         return Err(CoreError::InvalidThemeMode(config.theme_mode.clone()));
+    }
+    if !matches!(
+        config.theme_style.as_str(),
+        "radar" | "chat" | "workspace" | "matrix" | "glass" | "cyber" | "swiss" | "warm"
+    ) {
+        return Err(CoreError::InvalidThemeMode(config.theme_style.clone()));
     }
     Ok(())
 }
@@ -891,7 +1080,7 @@ mod tests {
         time::{Duration, Instant},
     };
 
-    use crate::model::TransferState;
+    use crate::model::{TransferCommand, TransferState};
 
     use super::{CoreConfig, CoreEvent, SourceHandle, TransferCore};
 
@@ -903,6 +1092,7 @@ mod tests {
             background_receive: false,
             auto_accept_trusted: false,
             theme_mode: "system".to_owned(),
+            theme_style: "radar".to_owned(),
             identity_wrap_key: None,
         }
     }
@@ -1681,6 +1871,444 @@ mod tests {
             thread::sleep(Duration::from_millis(20));
         }
         assert!(sender_done, "接收失败后发送端任务也必须终止");
+        sender.shutdown().expect("sender shutdown");
+        receiver.shutdown().expect("receiver shutdown");
+    }
+
+    #[test]
+    fn sender_pause_and_resume_syncs_to_receiver() {
+        let sender_root = tempfile::tempdir().expect("sender root");
+        let receiver_root = tempfile::tempdir().expect("receiver root");
+        let source_path = sender_root.path().join("pause_test.bin");
+        write_pattern(&source_path, 16);
+
+        let sender =
+            TransferCore::initialize(config(sender_root.path(), "发送端")).expect("sender core");
+        let receiver = TransferCore::initialize(config(receiver_root.path(), "接收端"))
+            .expect("receiver core");
+        let peer_id = sender
+            .connect_address(
+                &receiver
+                    .listening_address()
+                    .expect("receiver addr")
+                    .to_string(),
+            )
+            .expect("manual peer");
+        let transfer_id = sender
+            .send(
+                &peer_id,
+                vec![SourceHandle {
+                    token: source_path.to_string_lossy().into_owned(),
+                    persistent_token: None,
+                    display_name: "pause_test.bin".to_owned(),
+                    relative_path: None,
+                    is_directory: false,
+                    size: None,
+                    modified_unix_ms: None,
+                    random_access: None,
+                }],
+            )
+            .expect("send transfer");
+
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < deadline {
+            pump_and_accept(&[&sender, &receiver]);
+            if sender
+                .transfers()
+                .into_iter()
+                .any(|t| t.id == transfer_id && t.state == TransferState::Transferring)
+            {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        sender
+            .command_transfer(transfer_id, TransferCommand::Pause)
+            .expect("pause sender");
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut receiver_paused = false;
+        while Instant::now() < deadline {
+            pump_and_accept(&[&sender, &receiver]);
+            if let Some(snapshot) = receiver
+                .transfers()
+                .into_iter()
+                .find(|t| t.id == transfer_id)
+                && snapshot.state == TransferState::Paused
+            {
+                receiver_paused = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(receiver_paused, "发送端暂停后接收端应同步进入 Paused 状态");
+
+        sender
+            .command_transfer(transfer_id, TransferCommand::Resume)
+            .expect("resume sender");
+
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut completed = false;
+        while Instant::now() < deadline {
+            pump_and_accept(&[&sender, &receiver]);
+            if sender
+                .transfers()
+                .into_iter()
+                .any(|t| t.id == transfer_id && t.state == TransferState::Completed)
+                && receiver
+                    .transfers()
+                    .into_iter()
+                    .any(|t| t.id == transfer_id && t.state == TransferState::Completed)
+            {
+                completed = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(completed, "恢复后双方应顺利完成传输");
+        assert_eq!(
+            fs::read(receiver_root.path().join("receive/pause_test.bin")).expect("received bytes"),
+            fs::read(&source_path).expect("source bytes")
+        );
+        sender.shutdown().expect("sender shutdown");
+        receiver.shutdown().expect("receiver shutdown");
+    }
+
+    #[test]
+    fn receiver_pause_and_resume_syncs_to_sender() {
+        let sender_root = tempfile::tempdir().expect("sender root");
+        let receiver_root = tempfile::tempdir().expect("receiver root");
+        let source_path = sender_root.path().join("receiver_pause.bin");
+        write_pattern(&source_path, 16);
+
+        let sender =
+            TransferCore::initialize(config(sender_root.path(), "发送端")).expect("sender core");
+        let receiver = TransferCore::initialize(config(receiver_root.path(), "接收端"))
+            .expect("receiver core");
+        let peer_id = sender
+            .connect_address(
+                &receiver
+                    .listening_address()
+                    .expect("receiver addr")
+                    .to_string(),
+            )
+            .expect("manual peer");
+        let transfer_id = sender
+            .send(
+                &peer_id,
+                vec![SourceHandle {
+                    token: source_path.to_string_lossy().into_owned(),
+                    persistent_token: None,
+                    display_name: "receiver_pause.bin".to_owned(),
+                    relative_path: None,
+                    is_directory: false,
+                    size: None,
+                    modified_unix_ms: None,
+                    random_access: None,
+                }],
+            )
+            .expect("send transfer");
+
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < deadline {
+            pump_and_accept(&[&sender, &receiver]);
+            if receiver
+                .transfers()
+                .into_iter()
+                .any(|t| t.id == transfer_id && t.state == TransferState::Transferring)
+            {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        receiver
+            .command_transfer(transfer_id, TransferCommand::Pause)
+            .expect("pause receiver");
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut sender_paused = false;
+        while Instant::now() < deadline {
+            pump_and_accept(&[&sender, &receiver]);
+            if let Some(snapshot) = sender.transfers().into_iter().find(|t| t.id == transfer_id)
+                && snapshot.state == TransferState::Paused
+            {
+                sender_paused = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(sender_paused, "接收端暂停后发送端应同步进入 Paused 状态");
+
+        receiver
+            .command_transfer(transfer_id, TransferCommand::Resume)
+            .expect("resume receiver");
+
+        let deadline = Instant::now() + Duration::from_secs(20);
+        let mut completed = false;
+        while Instant::now() < deadline {
+            pump_and_accept(&[&sender, &receiver]);
+            if sender
+                .transfers()
+                .into_iter()
+                .any(|t| t.id == transfer_id && t.state == TransferState::Completed)
+                && receiver
+                    .transfers()
+                    .into_iter()
+                    .any(|t| t.id == transfer_id && t.state == TransferState::Completed)
+            {
+                completed = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(20));
+        }
+        assert!(completed, "接收端恢复后双方应顺利完成传输");
+        sender.shutdown().expect("sender shutdown");
+        receiver.shutdown().expect("receiver shutdown");
+    }
+
+    #[test]
+    fn sender_cancel_notifies_receiver_cleanly() {
+        let sender_root = tempfile::tempdir().expect("sender root");
+        let receiver_root = tempfile::tempdir().expect("receiver root");
+        let source_path = sender_root.path().join("cancel_test.bin");
+        write_pattern(&source_path, 16);
+
+        let sender =
+            TransferCore::initialize(config(sender_root.path(), "发送端")).expect("sender core");
+        let receiver = TransferCore::initialize(config(receiver_root.path(), "接收端"))
+            .expect("receiver core");
+        let peer_id = sender
+            .connect_address(
+                &receiver
+                    .listening_address()
+                    .expect("receiver addr")
+                    .to_string(),
+            )
+            .expect("manual peer");
+        let transfer_id = sender
+            .send(
+                &peer_id,
+                vec![SourceHandle {
+                    token: source_path.to_string_lossy().into_owned(),
+                    persistent_token: None,
+                    display_name: "cancel_test.bin".to_owned(),
+                    relative_path: None,
+                    is_directory: false,
+                    size: None,
+                    modified_unix_ms: None,
+                    random_access: None,
+                }],
+            )
+            .expect("send transfer");
+
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < deadline {
+            pump_and_accept(&[&sender, &receiver]);
+            if sender
+                .transfers()
+                .into_iter()
+                .any(|t| t.id == transfer_id && t.state == TransferState::Transferring)
+            {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        sender
+            .command_transfer(transfer_id, TransferCommand::Cancel)
+            .expect("cancel sender");
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut receiver_cancelled = false;
+        let mut failures = Vec::new();
+        while Instant::now() < deadline {
+            for (idx, core) in [&sender, &receiver].iter().enumerate() {
+                while let Some(event) = core.next_event() {
+                    if let CoreEvent::Failure { message } = event {
+                        failures.push((idx, message));
+                    }
+                }
+            }
+            if let Some(snapshot) = receiver
+                .transfers()
+                .into_iter()
+                .find(|t| t.id == transfer_id)
+                && snapshot.state == TransferState::Cancelled
+            {
+                assert!(
+                    snapshot.error.as_deref() == Some("对方已取消传输")
+                        || snapshot.error.as_deref() == Some("已取消"),
+                    "取消原因应为对方已取消传输，实际为 {:?}",
+                    snapshot.error
+                );
+                receiver_cancelled = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(receiver_cancelled, "发送端取消后接收端任务应变为 Cancelled");
+        assert!(
+            failures.is_empty(),
+            "取消操作不应弹出 Failure 错误事件: {failures:?}"
+        );
+        assert!(
+            part_file_sizes(receiver_root.path()).is_empty(),
+            "取消后不得残留 .part 临时文件"
+        );
+        sender.shutdown().expect("sender shutdown");
+        receiver.shutdown().expect("receiver shutdown");
+    }
+
+    #[test]
+    fn receiver_cancel_notifies_sender_cleanly() {
+        let sender_root = tempfile::tempdir().expect("sender root");
+        let receiver_root = tempfile::tempdir().expect("receiver root");
+        let source_path = sender_root.path().join("cancel_recv.bin");
+        write_pattern(&source_path, 16);
+
+        let sender =
+            TransferCore::initialize(config(sender_root.path(), "发送端")).expect("sender core");
+        let receiver = TransferCore::initialize(config(receiver_root.path(), "接收端"))
+            .expect("receiver core");
+        let peer_id = sender
+            .connect_address(
+                &receiver
+                    .listening_address()
+                    .expect("receiver addr")
+                    .to_string(),
+            )
+            .expect("manual peer");
+        let transfer_id = sender
+            .send(
+                &peer_id,
+                vec![SourceHandle {
+                    token: source_path.to_string_lossy().into_owned(),
+                    persistent_token: None,
+                    display_name: "cancel_recv.bin".to_owned(),
+                    relative_path: None,
+                    is_directory: false,
+                    size: None,
+                    modified_unix_ms: None,
+                    random_access: None,
+                }],
+            )
+            .expect("send transfer");
+
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < deadline {
+            pump_and_accept(&[&sender, &receiver]);
+            if receiver
+                .transfers()
+                .into_iter()
+                .any(|t| t.id == transfer_id && t.state == TransferState::Transferring)
+            {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+
+        receiver
+            .command_transfer(transfer_id, TransferCommand::Cancel)
+            .expect("cancel receiver");
+
+        let deadline = Instant::now() + Duration::from_secs(10);
+        let mut sender_cancelled = false;
+        let mut has_failure_event = false;
+        while Instant::now() < deadline {
+            for core in [&sender, &receiver] {
+                while let Some(event) = core.next_event() {
+                    if let CoreEvent::Failure { .. } = event {
+                        has_failure_event = true;
+                    }
+                }
+            }
+            if let Some(snapshot) = sender.transfers().into_iter().find(|t| t.id == transfer_id)
+                && snapshot.state == TransferState::Cancelled
+            {
+                assert!(
+                    snapshot.error.as_deref() == Some("对方已取消传输")
+                        || snapshot.error.as_deref() == Some("已取消"),
+                    "取消原因应为对方已取消传输，实际为 {:?}",
+                    snapshot.error
+                );
+                sender_cancelled = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+        assert!(sender_cancelled, "接收端取消后发送端任务应变为 Cancelled");
+        assert!(!has_failure_event, "取消操作不应弹出 Failure 错误事件");
+        sender.shutdown().expect("sender shutdown");
+        receiver.shutdown().expect("receiver shutdown");
+    }
+
+    #[test]
+    fn two_cores_transfer_large_file_with_work_stealing_pipeline() {
+        let sender_root = tempfile::tempdir().expect("sender root");
+        let receiver_root = tempfile::tempdir().expect("receiver root");
+        let source_path = sender_root.path().join("large_pipeline.bin");
+        // 写入 16 MiB (4 个 4MB 块)，确保多数据通道能够充分并发工作窃取并执行预取流水线
+        let total_bytes = write_pattern(&source_path, 16);
+        let _ = total_bytes;
+        let expected_hash = *blake3::hash(&fs::read(&source_path).expect("read source")).as_bytes();
+
+        let sender =
+            TransferCore::initialize(config(sender_root.path(), "发送端")).expect("sender core");
+        let receiver = TransferCore::initialize(config(receiver_root.path(), "接收端"))
+            .expect("receiver core");
+
+        let peer_id = sender
+            .connect_address(
+                &receiver
+                    .listening_address()
+                    .expect("receiver addr")
+                    .to_string(),
+            )
+            .expect("manual peer");
+
+        let transfer_id = sender
+            .send(
+                &peer_id,
+                vec![SourceHandle {
+                    token: source_path.to_string_lossy().into_owned(),
+                    persistent_token: None,
+                    display_name: "large_pipeline.bin".to_owned(),
+                    relative_path: None,
+                    is_directory: false,
+                    size: None,
+                    modified_unix_ms: None,
+                    random_access: Some(true),
+                }],
+            )
+            .expect("send transfer");
+
+        let deadline = Instant::now() + Duration::from_secs(30);
+        let mut completed = false;
+        while Instant::now() < deadline {
+            pump_and_accept(&[&sender, &receiver]);
+            if let Some(snapshot) = receiver
+                .transfers()
+                .into_iter()
+                .find(|t| t.id == transfer_id)
+                && snapshot.state == TransferState::Completed
+            {
+                completed = true;
+                break;
+            }
+            thread::sleep(Duration::from_millis(15));
+        }
+
+        assert!(completed, "16 MiB 大文件应在流水线工作窃取模式下顺利完成");
+        let target_path = receiver_root.path().join("receive/large_pipeline.bin");
+        assert!(target_path.exists(), "目标文件应已原子落盘");
+        let target_hash = *blake3::hash(&fs::read(target_path).expect("read target")).as_bytes();
+        assert_eq!(
+            expected_hash, target_hash,
+            "目标文件 BLAKE3 哈希必须与源文件完全一致"
+        );
+
         sender.shutdown().expect("sender shutdown");
         receiver.shutdown().expect("receiver shutdown");
     }

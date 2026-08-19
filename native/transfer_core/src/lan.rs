@@ -3,7 +3,6 @@ use std::{
     net::{IpAddr, Ipv4Addr, SocketAddr},
     path::PathBuf,
     sync::{Arc, Mutex, atomic::Ordering},
-    time::Duration,
 };
 
 use thiserror::Error;
@@ -26,9 +25,9 @@ use crate::{
     protocol::{self, read_envelope, wire, write_envelope},
     transfer::{self},
     wire::{
-        decision_envelope, device_kind, expect_connection_open, expect_hello, expect_offer,
-        expect_pairing, hello_envelope, pairing_code, pairing_confirmation, result_envelope,
-        tls_peer_fingerprint, transfer_token, validate_hello,
+        control_envelope, decision_envelope, device_kind, expect_connection_open, expect_hello,
+        expect_offer, expect_pairing, hello_envelope, pairing_code, pairing_confirmation,
+        result_envelope, tls_peer_fingerprint, transfer_token, validate_hello,
     },
 };
 
@@ -82,6 +81,12 @@ impl NetworkHandle {
 
     pub(crate) fn address(&self) -> SocketAddr {
         self.address
+    }
+
+    pub(crate) fn refresh_peers(&self) {
+        if let Some(mdns) = &self.mdns {
+            mdns.refresh();
+        }
     }
 
     pub(crate) fn shutdown(mut self) {
@@ -156,8 +161,20 @@ async fn accept_loop(
                     }
                     _ => Err(LanError::UnexpectedMessage("connection kind")),
                 };
+                let is_cancelled = outcome.as_ref().err().is_some_and(|e| e.is_cancelled())
+                    || handler_inner.transfer_is_cancelled(transfer_id);
                 if let Err(error) = &outcome {
-                    if error.is_retryable() {
+                    if is_cancelled {
+                        let _ = handler_inner.cancel_transfer_with_error(
+                            transfer_id,
+                            match error {
+                                LanError::RemoteCancelled(reason) => reason.clone(),
+                                _ => "已取消".to_owned(),
+                            },
+                        );
+                        let _ = delete_partial_data(&handler_inner.repository, transfer_id);
+                        return Err(LanError::Cancelled);
+                    } else if error.is_retryable() {
                         let _ = handler_inner.interrupt_transfer(transfer_id, error.to_string());
                     } else {
                         let _ = handler_inner.fail_transfer(transfer_id, error.to_string());
@@ -167,10 +184,11 @@ async fn accept_loop(
             }
             .await;
             if let Err(error) = result {
-                log::warn!("局域网连接处理失败: {error}");
-                let _ = connection_inner.queue_event(crate::core::CoreEvent::Failure {
-                    message: format!("局域网连接失败: {error}"),
-                });
+                if !error.is_cancelled() {
+                    log::warn!("局域网连接处理失败: {error}");
+                } else {
+                    log::info!("局域网传输已取消: {error}");
+                }
             }
         });
     }
@@ -318,7 +336,9 @@ where
         .lock()
         .map_err(|_| LanError::LockPoisoned)?
         .insert(transfer_id, context.clone());
+    inner.register_incoming_control(transfer_id, context.control.clone())?;
     let _context_guard = IncomingContextGuard {
+        inner: inner.clone(),
         state: state.clone(),
         transfer_id,
         context: context.clone(),
@@ -337,12 +357,19 @@ where
     );
     inner.transition_transfer(transfer_id, TransferState::Transferring)?;
 
+    let mut control_rx = context.control.register_channel();
+
     if context.remaining_chunks.load(Ordering::Acquire) != 0 {
         loop {
             if context.remaining_chunks.load(Ordering::Acquire) == 0 {
                 break;
             }
-            if inner.transfer_is_cancelled(transfer_id) {
+            if context.control.is_cancelled() || inner.transfer_is_cancelled(transfer_id) {
+                let _ = write_envelope(
+                    tls,
+                    &control_envelope(transfer_id, wire::ControlAction::Cancel),
+                )
+                .await;
                 return Err(LanError::Cancelled);
             }
             if inner.transfer_is_failed(transfer_id) {
@@ -355,8 +382,50 @@ where
                 return Err(LanError::Core("数据通道传输失败，接收中止".to_owned()));
             }
             tokio::select! {
-                () = context.completed.notified() => {}
-                () = tokio::time::sleep(Duration::from_millis(200)) => {}
+                Some(action) = control_rx.recv() => {
+                    log::info!("接收 {transfer_id}: 向发送端发送控制指令: {action:?}");
+                    let _ = write_envelope(tls, &control_envelope(transfer_id, action)).await;
+                    if action == wire::ControlAction::Cancel {
+                        return Err(LanError::Cancelled);
+                    }
+                }
+                envelope_res = read_envelope(tls) => {
+                    let envelope = match envelope_res {
+                        Ok(env) => env,
+                        Err(err) => {
+                            if context.control.is_cancelled() {
+                                return Err(LanError::Cancelled);
+                            }
+                            if inner.transfer_is_cancelled(transfer_id) {
+                                return Err(LanError::RemoteCancelled("对方已取消传输".to_owned()));
+                            }
+                            return Err(err.into());
+                        }
+                    };
+                    if let Some(wire::envelope::Payload::TransferControl(ctrl)) = envelope.payload {
+                        match wire::ControlAction::try_from(ctrl.action) {
+                            Ok(wire::ControlAction::Pause) => {
+                                log::info!("接收 {transfer_id}: 收到发送端暂停指令");
+                                inner.pause_from_remote(transfer_id)?;
+                            }
+                            Ok(wire::ControlAction::Resume) => {
+                                log::info!("接收 {transfer_id}: 收到发送端继续指令");
+                                inner.resume_from_remote(transfer_id)?;
+                            }
+                            Ok(wire::ControlAction::Cancel) => {
+                                log::info!("接收 {transfer_id}: 收到发送端取消指令");
+                                inner.cancel_from_remote(transfer_id, "对方已取消传输")?;
+                                return Err(LanError::RemoteCancelled("对方已取消传输".to_owned()));
+                            }
+                            _ => {}
+                        }
+                    }
+                }
+                () = context.completed.notified() => {
+                    if context.remaining_chunks.load(Ordering::Acquire) == 0 {
+                        break;
+                    }
+                }
                 () = inner.shutdown.cancelled() => return Err(LanError::Stopped),
             }
         }
@@ -378,6 +447,7 @@ where
 }
 
 struct IncomingContextGuard {
+    inner: Arc<CoreInner>,
     state: Arc<NetworkState>,
     transfer_id: Uuid,
     context: Arc<IncomingContext>,
@@ -385,6 +455,7 @@ struct IncomingContextGuard {
 
 impl Drop for IncomingContextGuard {
     fn drop(&mut self) {
+        let _ = self.inner.unregister_incoming_control(self.transfer_id);
         if let Ok(mut incoming) = self.state.incoming.lock()
             && incoming
                 .get(&self.transfer_id)
@@ -463,6 +534,8 @@ pub enum LanError {
     Stopped,
     #[error("任务已取消")]
     Cancelled,
+    #[error("对方已取消传输: {0}")]
+    RemoteCancelled(String),
     #[error("网络状态锁已损坏")]
     LockPoisoned,
     #[error("未知传入任务: {0}")]
@@ -497,11 +570,19 @@ pub enum LanError {
 }
 
 impl LanError {
+    pub(crate) fn is_cancelled(&self) -> bool {
+        matches!(self, Self::Cancelled | Self::RemoteCancelled(_))
+    }
+
     pub(crate) fn is_retryable(&self) -> bool {
+        if self.is_cancelled() {
+            return false;
+        }
         matches!(
             self,
             Self::Io(_)
                 | Self::Tls(_)
+                | Self::Protocol(crate::protocol::ProtocolError::Io(_))
                 | Self::Stopped
                 | Self::RemoteTransferFailed(_)
                 | Self::SourceChanged(_)

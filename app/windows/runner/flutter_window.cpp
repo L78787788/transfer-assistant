@@ -5,6 +5,7 @@
 #include "flutter/generated_plugin_registrant.h"
 #include "platform_channel.h"
 #include "resource.h"
+#include "utils.h"
 
 namespace {
 constexpr UINT kTrayMessage = WM_APP + 1;
@@ -34,8 +35,17 @@ bool FlutterWindow::OnCreate() {
   RegisterPlatformChannel(
       flutter_controller_->engine(), GetHandle(),
       [this](bool enabled) { SetBackgroundReceive(enabled); },
-      [this](bool active) { SetTransferActive(active); });
+      [this](bool active) { SetTransferActive(active); },
+      [this](const std::string& title, const std::string& body) {
+        ShowTrayNotification(title, body);
+      },
+      [this](const std::string& status) {
+        UpdateTrayStatus(status);
+      });
   SetChildContent(flutter_controller_->view()->GetNativeWindow());
+
+  // 开启全窗口文件与文件夹拖拽接收
+  ::DragAcceptFiles(GetHandle(), TRUE);
 
   flutter_controller_->engine()->SetNextFrameCallback([&]() {
     this->Show();
@@ -73,6 +83,20 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
   }
 
   switch (message) {
+    case WM_DROPFILES: {
+      HDROP hdrop = reinterpret_cast<HDROP>(wparam);
+      UINT file_count = ::DragQueryFileW(hdrop, 0xFFFFFFFF, nullptr, 0);
+      std::vector<std::string> paths;
+      for (UINT i = 0; i < file_count; ++i) {
+        wchar_t file_path[MAX_PATH];
+        if (::DragQueryFileW(hdrop, i, file_path, MAX_PATH) > 0) {
+          paths.push_back(Utf8FromUtf16(file_path));
+        }
+      }
+      ::DragFinish(hdrop);
+      NotifyFilesDropped(paths);
+      return 0;
+    }
     case WM_CLOSE:
       if (background_receive_ || transfer_active_) {
         ::ShowWindow(hwnd, SW_HIDE);
@@ -80,7 +104,7 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
       }
       break;
     case kTrayMessage:
-      if (lparam == WM_LBUTTONUP || lparam == WM_LBUTTONDBLCLK) {
+      if (lparam == WM_LBUTTONUP || lparam == WM_LBUTTONDBLCLK || lparam == NIN_BALLOONUSERCLICK) {
         ::ShowWindow(hwnd, SW_RESTORE);
         ::SetForegroundWindow(hwnd);
         return 0;
@@ -91,6 +115,8 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
         ::GetCursorPos(&cursor);
         ::SetForegroundWindow(hwnd);
         HMENU menu = ::CreatePopupMenu();
+        ::AppendMenuW(menu, MF_STRING, IDM_TRAY_SHOW, L"打开传输助手");
+        ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
         ::AppendMenuW(menu, MF_STRING, IDM_TRAY_EXIT, L"退出");
         ::TrackPopupMenu(menu, TPM_RIGHTALIGN | TPM_BOTTOMALIGN | TPM_RIGHTBUTTON,
                          cursor.x, cursor.y, 0, hwnd, nullptr);
@@ -99,6 +125,11 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
       }
       break;
     case WM_COMMAND:
+      if (LOWORD(wparam) == IDM_TRAY_SHOW && HIWORD(wparam) == 0) {
+        ::ShowWindow(hwnd, SW_RESTORE);
+        ::SetForegroundWindow(hwnd);
+        return 0;
+      }
       if (LOWORD(wparam) == IDM_TRAY_EXIT && HIWORD(wparam) == 0) {
         RemoveTrayIcon();
         ::PostQuitMessage(0);
@@ -156,4 +187,33 @@ void FlutterWindow::RemoveTrayIcon() {
     ::Shell_NotifyIcon(NIM_DELETE, &tray_icon_);
     tray_icon_ = {};
   }
+}
+
+void FlutterWindow::ShowTrayNotification(const std::string& title, const std::string& body) {
+  UpdateTrayIcon();
+  if (tray_icon_.cbSize == 0) {
+    return;
+  }
+  NOTIFYICONDATA nid = tray_icon_;
+  nid.uFlags |= NIF_INFO;
+  nid.dwInfoFlags = NIIF_INFO;
+  std::wstring wtitle = Utf16FromUtf8(title);
+  std::wstring wbody = Utf16FromUtf8(body);
+  wcscpy_s(nid.szInfoTitle, wtitle.c_str());
+  wcscpy_s(nid.szInfo, wbody.c_str());
+  ::Shell_NotifyIcon(NIM_MODIFY, &nid);
+}
+
+void FlutterWindow::UpdateTrayStatus(const std::string& status_text) {
+  if (tray_icon_.cbSize == 0) {
+    return;
+  }
+  std::wstring tip = Utf16FromUtf8(status_text.empty() ? "传输助手" : status_text);
+  if (tip.length() >= sizeof(tray_icon_.szTip) / sizeof(tray_icon_.szTip[0])) {
+    tip = tip.substr(0, sizeof(tray_icon_.szTip) / sizeof(tray_icon_.szTip[0]) - 1);
+  }
+  wcsncpy_s(tray_icon_.szTip, tip.c_str(), _TRUNCATE);
+  NOTIFYICONDATA nid = tray_icon_;
+  nid.uFlags = NIF_TIP;
+  ::Shell_NotifyIcon(NIM_MODIFY, &nid);
 }

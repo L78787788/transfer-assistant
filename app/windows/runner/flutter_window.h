@@ -28,6 +28,8 @@ class FlutterWindow : public Win32Window {
   void SetTransferActive(bool active);
   void UpdateTrayIcon();
   void RemoveTrayIcon();
+  void ShowTrayNotification(const std::string& title, const std::string& body);
+  void UpdateTrayStatus(const std::string& status_text);
 
   // The project to run.
   flutter::DartProject project_;

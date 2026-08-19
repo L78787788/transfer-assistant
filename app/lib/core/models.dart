@@ -85,6 +85,25 @@ class TransferSnapshot {
     _ => true,
   };
 
+  String? get etaText {
+    if (!isActive || state != TransferState.transferring || bytesPerSecond <= 0) {
+      return null;
+    }
+    final remainingBytes = (totalBytes - completedBytes).clamp(0, totalBytes);
+    if (remainingBytes <= 0) return null;
+    final seconds = remainingBytes ~/ bytesPerSecond;
+    if (seconds < 5) return '即将完成';
+    if (seconds < 60) return '约 $seconds 秒';
+    final minutes = seconds ~/ 60;
+    final remSeconds = seconds % 60;
+    if (minutes < 60) {
+      return remSeconds > 0 ? '约 $minutes 分 $remSeconds 秒' : '约 $minutes 分钟';
+    }
+    final hours = minutes ~/ 60;
+    final remMinutes = minutes % 60;
+    return '约 $hours 小时 $remMinutes 分';
+  }
+
   factory TransferSnapshot.fromJson(Map<String, Object?> json) {
     final stateName = (json['state']! as String).replaceAll('_', '');
     return TransferSnapshot(
@@ -173,6 +192,15 @@ class SourceHandle {
   };
 }
 
+enum AppThemeStyle {
+  radar('全景星轨雷达', 'AirDrop · 空间雷达天体交互'),
+  chat('流式传输会话', '微信/Telegram · 设备会话流与气泡');
+
+  const AppThemeStyle(this.label, this.description);
+  final String label;
+  final String description;
+}
+
 class AppSettings {
   const AppSettings({
     required this.deviceName,
@@ -180,6 +208,7 @@ class AppSettings {
     this.backgroundReceive = false,
     this.autoAcceptTrusted = false,
     this.themeMode = ThemeMode.system,
+    this.themeStyle = AppThemeStyle.radar,
   });
 
   final String deviceName;
@@ -187,6 +216,7 @@ class AppSettings {
   final bool backgroundReceive;
   final bool autoAcceptTrusted;
   final ThemeMode themeMode;
+  final AppThemeStyle themeStyle;
 
   AppSettings copyWith({
     String? deviceName,
@@ -194,12 +224,14 @@ class AppSettings {
     bool? backgroundReceive,
     bool? autoAcceptTrusted,
     ThemeMode? themeMode,
+    AppThemeStyle? themeStyle,
   }) => AppSettings(
     deviceName: deviceName ?? this.deviceName,
     receiveDirectory: receiveDirectory ?? this.receiveDirectory,
     backgroundReceive: backgroundReceive ?? this.backgroundReceive,
     autoAcceptTrusted: autoAcceptTrusted ?? this.autoAcceptTrusted,
     themeMode: themeMode ?? this.themeMode,
+    themeStyle: themeStyle ?? this.themeStyle,
   );
 
   Map<String, Object?> toJson() => {
@@ -208,6 +240,7 @@ class AppSettings {
     'background_receive': backgroundReceive,
     'auto_accept_trusted': autoAcceptTrusted,
     'theme_mode': themeMode.name,
+    'theme_style': themeStyle.name,
   };
 }
 
@@ -242,4 +275,106 @@ class CoreReady extends CoreEvent {
 class CoreSettingsLoaded extends CoreEvent {
   const CoreSettingsLoaded(this.settings);
   final AppSettings settings;
+}
+
+class HistoryFileItem {
+  const HistoryFileItem({
+    required this.id,
+    required this.transferId,
+    required this.fileName,
+    required this.relativePath,
+    required this.localPath,
+    required this.isDirectory,
+    required this.size,
+    required this.peerName,
+    required this.direction,
+    required this.completedAt,
+  });
+
+  final String id;
+  final String transferId;
+  final String fileName;
+  final String relativePath;
+  final String? localPath;
+  final bool isDirectory;
+  final int size;
+  final String peerName;
+  final TransferDirection direction;
+  final DateTime completedAt;
+
+  factory HistoryFileItem.fromJson(Map<String, Object?> json) =>
+      HistoryFileItem(
+        id: json['id']! as String,
+        transferId: json['transfer_id']! as String,
+        fileName: json['file_name']! as String,
+        relativePath: json['relative_path']! as String,
+        localPath: json['local_path'] as String?,
+        isDirectory: json['is_directory'] == true,
+        size: (json['size'] as num).toInt(),
+        peerName: json['peer_name']! as String,
+        direction: json['direction'] == 'incoming'
+            ? TransferDirection.incoming
+            : TransferDirection.outgoing,
+        completedAt: DateTime.fromMillisecondsSinceEpoch(
+          (json['completed_unix_ms'] as num).toInt(),
+        ),
+      );
+}
+
+class TransferItem {
+  const TransferItem({
+    required this.id,
+    required this.transferId,
+    required this.relativePath,
+    required this.isDirectory,
+    required this.size,
+    required this.modifiedUnixMs,
+    this.sourceRevision,
+    this.temporaryRef,
+    this.finalRef,
+  });
+
+  final String id;
+  final String transferId;
+  final String relativePath;
+  final bool isDirectory;
+  final int size;
+  final int modifiedUnixMs;
+  final String? sourceRevision;
+  final String? temporaryRef;
+  final String? finalRef;
+
+  factory TransferItem.fromJson(Map<String, Object?> json) => TransferItem(
+        id: json['id']! as String,
+        transferId: json['transfer_id']! as String,
+        relativePath: json['relative_path']! as String,
+        isDirectory: json['kind'] == 'directory',
+        size: (json['size'] as num).toInt(),
+        modifiedUnixMs: (json['modified_unix_ms'] as num).toInt(),
+        sourceRevision: json['source_revision'] as String?,
+        temporaryRef: json['temporary_ref'] as String?,
+        finalRef: json['final_ref'] as String?,
+      );
+}
+
+class SharedPayload {
+  const SharedPayload({
+    required this.type,
+    this.text,
+    this.paths = const [],
+  });
+
+  final String type; // 'text' or 'files'
+  final String? text;
+  final List<String> paths;
+
+  factory SharedPayload.fromJson(Map<String, Object?> json) {
+    return SharedPayload(
+      type: json['type'] as String? ?? 'files',
+      text: json['text'] as String?,
+      paths: (json['paths'] as List<Object?>? ?? const [])
+          .map((e) => e.toString())
+          .toList(growable: false),
+    );
+  }
 }

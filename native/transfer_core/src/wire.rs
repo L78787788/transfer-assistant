@@ -87,6 +87,15 @@ pub(crate) fn result_envelope(transfer_id: Uuid, completed: bool, error: &str) -
     ))
 }
 
+pub(crate) fn control_envelope(transfer_id: Uuid, action: wire::ControlAction) -> wire::Envelope {
+    envelope(wire::envelope::Payload::TransferControl(
+        wire::TransferControl {
+            transfer_id: transfer_id.to_string(),
+            action: action as i32,
+        },
+    ))
+}
+
 pub(crate) fn envelope(payload: wire::envelope::Payload) -> wire::Envelope {
     wire::Envelope {
         protocol_major: PROTOCOL_MAJOR,
@@ -97,6 +106,7 @@ pub(crate) fn envelope(payload: wire::envelope::Payload) -> wire::Envelope {
 
 macro_rules! expect_payload {
     ($name:ident, $variant:ident, $type:ty) => {
+        #[allow(dead_code)]
         pub(crate) fn $name(envelope: wire::Envelope) -> Result<$type, LanError> {
             match envelope.payload {
                 Some(wire::envelope::Payload::$variant(value)) => Ok(value),
@@ -118,6 +128,7 @@ expect_payload!(
 expect_payload!(expect_decision, OfferDecision, wire::OfferDecision);
 expect_payload!(expect_resume, ResumeState, wire::ResumeState);
 expect_payload!(expect_result, TransferResult, wire::TransferResult);
+expect_payload!(expect_control, TransferControl, wire::TransferControl);
 
 pub(crate) fn validate_hello(
     hello: &wire::Hello,

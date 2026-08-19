@@ -4,6 +4,7 @@
 //
 #define IDI_APP_ICON                    101
 #define IDM_TRAY_EXIT                   102
+#define IDM_TRAY_SHOW                   103
 
 // Next default values for new objects
 //

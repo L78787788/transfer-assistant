@@ -1,110 +1,253 @@
 import 'package:flutter/material.dart';
+import '../core/models.dart';
 
-abstract final class AppTheme {
-  static const _lightScheme = ColorScheme(
-    brightness: Brightness.light,
-    primary: Color(0xff087f5b),
-    onPrimary: Colors.white,
-    primaryContainer: Color(0xffd3f9d8),
-    onPrimaryContainer: Color(0xff0b3d2e),
-    secondary: Color(0xffb86200),
-    onSecondary: Colors.white,
-    secondaryContainer: Color(0xffffe8cc),
-    onSecondaryContainer: Color(0xff512b00),
-    error: Color(0xffc92a2a),
-    onError: Colors.white,
-    errorContainer: Color(0xffffe3e3),
-    onErrorContainer: Color(0xff6b1111),
-    surface: Color(0xfffbfcfa),
-    onSurface: Color(0xff202522),
-    surfaceContainerHighest: Color(0xffe9ecea),
-    onSurfaceVariant: Color(0xff58615c),
-    outline: Color(0xffabb3ae),
-    outlineVariant: Color(0xffd8ddda),
-    shadow: Color(0x22000000),
-    scrim: Color(0x66000000),
-    inverseSurface: Color(0xff2d332f),
-    onInverseSurface: Color(0xfff2f5f3),
-    inversePrimary: Color(0xff63e6be),
+/// 扩展主题设计 Token · 完整设计系统规范
+class AppThemeTokens extends ThemeExtension<AppThemeTokens> {
+  const AppThemeTokens({
+    required this.style,
+    required this.brand400,
+    required this.brand500,
+    required this.brand600,
+    required this.brand700,
+    required this.accent,
+    required this.brandGradient,
+    required this.surface2,
+    required this.border,
+    required this.textSecondary,
+    required this.textTertiary,
+    required this.success,
+    required this.warning,
+    required this.cardRadius,
+    required this.cardBg,
+    required this.cardBorder,
+    required this.shadowIcon,
+    required this.shadowGlow,
+    required this.shadowMd,
+  });
+
+  final AppThemeStyle style;
+  final Color brand400;
+  final Color brand500;
+  final Color brand600;
+  final Color brand700;
+  final Color accent;
+  final Gradient brandGradient;
+  final Color surface2;
+  final Color border;
+  final Color textSecondary;
+  final Color textTertiary;
+  final Color success;
+  final Color warning;
+  final double cardRadius;
+  final Color cardBg;
+  final Color cardBorder;
+  final List<BoxShadow> shadowIcon;
+  final List<BoxShadow> shadowGlow;
+  final List<BoxShadow> shadowMd;
+
+  @override
+  ThemeExtension<AppThemeTokens> copyWith({
+    AppThemeStyle? style,
+    Color? brand400,
+    Color? brand500,
+    Color? brand600,
+    Color? brand700,
+    Color? accent,
+    Gradient? brandGradient,
+    Color? surface2,
+    Color? border,
+    Color? textSecondary,
+    Color? textTertiary,
+    Color? success,
+    Color? warning,
+    double? cardRadius,
+    Color? cardBg,
+    Color? cardBorder,
+    List<BoxShadow>? shadowIcon,
+    List<BoxShadow>? shadowGlow,
+    List<BoxShadow>? shadowMd,
+  }) {
+    return AppThemeTokens(
+      style: style ?? this.style,
+      brand400: brand400 ?? this.brand400,
+      brand500: brand500 ?? this.brand500,
+      brand600: brand600 ?? this.brand600,
+      brand700: brand700 ?? this.brand700,
+      accent: accent ?? this.accent,
+      brandGradient: brandGradient ?? this.brandGradient,
+      surface2: surface2 ?? this.surface2,
+      border: border ?? this.border,
+      textSecondary: textSecondary ?? this.textSecondary,
+      textTertiary: textTertiary ?? this.textTertiary,
+      success: success ?? this.success,
+      warning: warning ?? this.warning,
+      cardRadius: cardRadius ?? this.cardRadius,
+      cardBg: cardBg ?? this.cardBg,
+      cardBorder: cardBorder ?? this.cardBorder,
+      shadowIcon: shadowIcon ?? this.shadowIcon,
+      shadowGlow: shadowGlow ?? this.shadowGlow,
+      shadowMd: shadowMd ?? this.shadowMd,
+    );
+  }
+
+  @override
+  ThemeExtension<AppThemeTokens> lerp(
+    covariant ThemeExtension<AppThemeTokens>? other,
+    double t,
+  ) {
+    if (other is! AppThemeTokens) return this;
+    return AppThemeTokens(
+      style: t < 0.5 ? style : other.style,
+      brand400: Color.lerp(brand400, other.brand400, t)!,
+      brand500: Color.lerp(brand500, other.brand500, t)!,
+      brand600: Color.lerp(brand600, other.brand600, t)!,
+      brand700: Color.lerp(brand700, other.brand700, t)!,
+      accent: Color.lerp(accent, other.accent, t)!,
+      brandGradient: other.brandGradient,
+      surface2: Color.lerp(surface2, other.surface2, t)!,
+      border: Color.lerp(border, other.border, t)!,
+      textSecondary: Color.lerp(textSecondary, other.textSecondary, t)!,
+      textTertiary: Color.lerp(textTertiary, other.textTertiary, t)!,
+      success: Color.lerp(success, other.success, t)!,
+      warning: Color.lerp(warning, other.warning, t)!,
+      cardRadius: cardRadius + (other.cardRadius - cardRadius) * t,
+      cardBg: Color.lerp(cardBg, other.cardBg, t)!,
+      cardBorder: Color.lerp(cardBorder, other.cardBorder, t)!,
+      shadowIcon: t < 0.5 ? shadowIcon : other.shadowIcon,
+      shadowGlow: t < 0.5 ? shadowGlow : other.shadowGlow,
+      shadowMd: t < 0.5 ? shadowMd : other.shadowMd,
+    );
+  }
+}
+
+class AppTheme {
+  // 品牌色板
+  static const brand400 = Color(0xff38bdf8);
+  static const brand500 = Color(0xff0ea5e9);
+  static const brand600 = Color(0xff0284c7);
+  static const brand700 = Color(0xff0369a1);
+  static const accent = Color(0xff06b6d4);
+
+  // 语义色板
+  static const success = Color(0xff10b981);
+  static const warning = Color(0xfff59e0b);
+  static const error = Color(0xffef4444);
+
+  // 品牌渐变
+  static const brandGradient = LinearGradient(
+    colors: [brand400, brand600],
+    begin: Alignment.topLeft,
+    end: Alignment.bottomRight,
   );
 
-  static const _darkScheme = ColorScheme(
-    brightness: Brightness.dark,
-    primary: Color(0xff63e6be),
-    onPrimary: Color(0xff073c2e),
-    primaryContainer: Color(0xff145c48),
-    onPrimaryContainer: Color(0xffd3f9d8),
-    secondary: Color(0xffffb86b),
-    onSecondary: Color(0xff4d2900),
-    secondaryContainer: Color(0xff6b3d0d),
-    onSecondaryContainer: Color(0xffffe8cc),
-    error: Color(0xffff8787),
-    onError: Color(0xff5f1010),
-    errorContainer: Color(0xff812020),
-    onErrorContainer: Color(0xffffe3e3),
-    surface: Color(0xff181c1a),
-    onSurface: Color(0xffe8ece9),
-    surfaceContainerHighest: Color(0xff323834),
-    onSurfaceVariant: Color(0xffb8c0bb),
-    outline: Color(0xff77817b),
-    outlineVariant: Color(0xff3e4641),
-    shadow: Colors.black,
-    scrim: Color(0x99000000),
-    inverseSurface: Color(0xffe8ece9),
-    onInverseSurface: Color(0xff232825),
-    inversePrimary: Color(0xff087f5b),
-  );
+  static ThemeData build(AppThemeStyle style, Brightness brightness) {
+    final isDark = brightness == Brightness.dark;
+    return _buildTheme(isDark);
+  }
 
-  static ThemeData get light => _build(_lightScheme);
-  static ThemeData get dark => _build(_darkScheme);
+  static ThemeData _buildTheme(bool isDark) {
+    final primary = isDark ? brand400 : brand600;
+    final bg = isDark ? const Color(0xff0b1120) : const Color(0xfff8fafc);
+    final surface = isDark ? const Color(0xff131c2e) : const Color(0xffffffff);
+    final surface2 = isDark ? const Color(0xff16213a) : const Color(0xfff8fafc);
+    final border = isDark ? const Color(0xff1e2a44) : const Color(0xffe2e8f0);
+    final text = isDark ? const Color(0xfff1f5f9) : const Color(0xff0f172a);
+    final text2 = isDark ? const Color(0xff94a3b8) : const Color(0xff64748b);
+    final text3 = isDark ? const Color(0xff64748b) : const Color(0xff94a3b8);
 
-  static ThemeData _build(ColorScheme scheme) {
-    final text = Typography.material2021(
-      platform: TargetPlatform.windows,
-    ).black;
+    final colorScheme = ColorScheme(
+      brightness: isDark ? Brightness.dark : Brightness.light,
+      primary: primary,
+      onPrimary: Colors.white,
+      primaryContainer: isDark ? const Color(0xff0369a1) : const Color(0xffe0f2fe),
+      onPrimaryContainer: isDark ? const Color(0xffe0f2fe) : const Color(0xff0369a1),
+      secondary: accent,
+      onSecondary: Colors.white,
+      secondaryContainer: isDark ? const Color(0xff155e75) : const Color(0xffcffafe),
+      onSecondaryContainer: isDark ? const Color(0xffcffafe) : const Color(0xff155e75),
+      error: error,
+      onError: Colors.white,
+      surface: surface,
+      onSurface: text,
+      onSurfaceVariant: text2,
+      outline: border,
+    );
+
+    final tokens = AppThemeTokens(
+      style: AppThemeStyle.chat,
+      brand400: brand400,
+      brand500: brand500,
+      brand600: brand600,
+      brand700: brand700,
+      accent: accent,
+      brandGradient: brandGradient,
+      surface2: surface2,
+      border: border,
+      textSecondary: text2,
+      textTertiary: text3,
+      success: success,
+      warning: warning,
+      cardRadius: 14,
+      cardBg: surface,
+      cardBorder: border,
+      shadowIcon: const [
+        BoxShadow(
+          color: Color(0x4d0ea5e9),
+          blurRadius: 12,
+          offset: Offset(0, 4),
+        ),
+      ],
+      shadowGlow: const [
+        BoxShadow(
+          color: Color(0x730ea5e9),
+          blurRadius: 30,
+          offset: Offset(0, 10),
+        ),
+      ],
+      shadowMd: const [
+        BoxShadow(
+          color: Color(0x0f0f172a),
+          blurRadius: 6,
+          offset: Offset(0, 4),
+        ),
+      ],
+    );
+
     return ThemeData(
       useMaterial3: true,
-      colorScheme: scheme,
-      scaffoldBackgroundColor: scheme.surface,
-      textTheme: text
-          .copyWith(
-            headlineSmall: text.headlineSmall?.copyWith(
-              fontWeight: FontWeight.w700,
-            ),
-            titleLarge: text.titleLarge?.copyWith(fontWeight: FontWeight.w700),
-            titleMedium: text.titleMedium?.copyWith(
-              fontWeight: FontWeight.w600,
-            ),
-          )
-          .apply(bodyColor: scheme.onSurface, displayColor: scheme.onSurface),
-      cardTheme: CardThemeData(
-        elevation: 0,
-        margin: EdgeInsets.zero,
-        shape: RoundedRectangleBorder(
-          borderRadius: BorderRadius.circular(8),
-          side: BorderSide(color: scheme.outlineVariant),
+      colorScheme: colorScheme,
+      scaffoldBackgroundColor: bg,
+      fontFamily: 'sans-serif',
+      fontFamilyFallback: const [
+        'Roboto',
+        'PingFang SC',
+        'Hiragino Sans GB',
+        'Microsoft YaHei',
+        'Noto Sans CJK SC',
+        'Source Han Sans SC',
+        'sans-serif',
+      ],
+      extensions: [tokens],
+      dividerTheme: DividerThemeData(
+        color: border,
+        thickness: 1,
+      ),
+      chipTheme: ChipThemeData(
+        labelStyle: TextStyle(
+          fontSize: 12,
+          color: text,
+          fontWeight: FontWeight.w500,
         ),
-      ),
-      inputDecorationTheme: InputDecorationTheme(
-        filled: true,
-        fillColor: scheme.surface,
-        border: OutlineInputBorder(borderRadius: BorderRadius.circular(6)),
-        enabledBorder: OutlineInputBorder(
-          borderRadius: BorderRadius.circular(6),
-          borderSide: BorderSide(color: scheme.outlineVariant),
+        secondaryLabelStyle: TextStyle(
+          fontSize: 12,
+          color: primary,
+          fontWeight: FontWeight.w600,
         ),
+        selectedColor: primary.withValues(alpha: isDark ? 0.20 : 0.12),
+        backgroundColor: isDark ? surface2 : surface,
+        side: BorderSide(color: border),
+        shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(999)),
       ),
-      segmentedButtonTheme: SegmentedButtonThemeData(
-        style: ButtonStyle(
-          shape: WidgetStatePropertyAll(
-            RoundedRectangleBorder(borderRadius: BorderRadius.circular(6)),
-          ),
-        ),
-      ),
-      tooltipTheme: const TooltipThemeData(
-        waitDuration: Duration(milliseconds: 350),
-      ),
-      dividerTheme: DividerThemeData(color: scheme.outlineVariant, space: 1),
     );
   }
 }

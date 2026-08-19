@@ -1,0 +1,10 @@
+<vector xmlns:android="http://schemas.android.com/apk/res/android"
+    android:width="24dp"
+    android:height="24dp"
+    android:viewportWidth="24"
+    android:viewportHeight="24">
+    <!-- 双向对冲极速传输箭头（与最新软件图标完全一致） -->
+    <path
+        android:fillColor="#FFFFFFFF"
+        android:pathData="M3,8h11V5l7,4.5L14,14v-3H3V8z M21,16H10v3L3,14.5L10,10v3h11V16z" />
+</vector>

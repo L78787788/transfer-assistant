@@ -131,6 +131,40 @@ class NativeTransferCoreClient implements TransferCoreClient {
       _command('remove_trusted_peer', {'peer_id': peerId});
 
   @override
+  Future<List<HistoryFileItem>> listHistoryFiles() async {
+    final response = _call(_invoke!, {'command': 'list_history_files'});
+    final list = (response['files'] as List<Object?>? ?? const [])
+        .cast<Map<String, Object?>>();
+    return list.map(HistoryFileItem.fromJson).toList(growable: false);
+  }
+
+  @override
+  Future<List<TransferItem>> listTransferItems(String transferId) async {
+    final response = _call(_invoke!, {
+      'command': 'list_transfer_items',
+      'transfer_id': transferId,
+    });
+    final list = (response['items'] as List<Object?>? ?? const [])
+        .cast<Map<String, Object?>>();
+    return list.map(TransferItem.fromJson).toList(growable: false);
+  }
+
+  @override
+  Future<int> clearHistory() async {
+    final response = _call(_invoke!, {'command': 'clear_history'});
+    return (response['count'] as num?)?.toInt() ?? 0;
+  }
+
+  @override
+  Future<bool> deleteHistoryTransfer(String transferId) async {
+    final response = _call(_invoke!, {
+      'command': 'delete_history_transfer',
+      'transfer_id': transferId,
+    });
+    return response['deleted'] == true;
+  }
+
+  @override
   Future<void> shutdown() async {
     _pollTimer?.cancel();
     if (_library != null) {
@@ -187,6 +221,7 @@ class NativeTransferCoreClient implements TransferCoreClient {
         backgroundReceive: json['background_receive'] == true,
         autoAcceptTrusted: json['auto_accept_trusted'] == true,
         themeMode: _themeModeFromName(json['theme_mode'] as String?),
+        themeStyle: _themeStyleFromName(json['theme_style'] as String?),
       ),
     ),
     'peers_changed' => PeersChanged(
@@ -218,4 +253,9 @@ ThemeMode _themeModeFromName(String? name) => switch (name) {
   'light' => ThemeMode.light,
   'dark' => ThemeMode.dark,
   _ => ThemeMode.system,
+};
+
+AppThemeStyle _themeStyleFromName(String? name) => switch (name) {
+  'chat' => AppThemeStyle.chat,
+  _ => AppThemeStyle.radar,
 };

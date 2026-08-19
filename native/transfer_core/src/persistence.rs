@@ -1,7 +1,7 @@
 use std::{path::Path, sync::Mutex};
 
 use rusqlite::{Connection, OptionalExtension, params, types::Type};
-use serde::{Serialize, de::DeserializeOwned};
+use serde::{Deserialize, Serialize, de::DeserializeOwned};
 use thiserror::Error;
 use uuid::Uuid;
 
@@ -10,9 +10,23 @@ use crate::{
     model::{TransferDirection, TransferSnapshot, TransferState, TrustedPeer},
 };
 
-const SCHEMA_VERSION: i64 = 2;
+const SCHEMA_VERSION: i64 = 3;
 
-#[derive(Debug, Clone, PartialEq, Eq)]
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
+pub struct HistoryFileRecord {
+    pub id: String,
+    pub transfer_id: String,
+    pub file_name: String,
+    pub relative_path: String,
+    pub local_path: Option<String>,
+    pub is_directory: bool,
+    pub size: u64,
+    pub peer_name: String,
+    pub direction: TransferDirection,
+    pub completed_unix_ms: i64,
+}
+
+#[derive(Debug, Clone, PartialEq, Eq, Serialize, Deserialize)]
 pub struct StoredTransferItem {
     pub id: String,
     pub transfer_id: Uuid,
@@ -91,13 +105,46 @@ impl TransferRepository {
              CREATE TABLE IF NOT EXISTS settings (
                key TEXT PRIMARY KEY,
                value_json TEXT NOT NULL
-             );",
+             );
+             CREATE INDEX IF NOT EXISTS idx_transfers_updated ON transfers(updated_unix_ms);
+             CREATE INDEX IF NOT EXISTS idx_transfer_items_transfer_id ON transfer_items(transfer_id);
+             CREATE INDEX IF NOT EXISTS idx_completed_chunks_transfer ON completed_chunks(transfer_id);",
             )?;
         }
-        if existing_version == 1 {
+        if existing_version > 0 && existing_version < SCHEMA_VERSION {
+            if existing_version == 1 {
+                connection.execute_batch(
+                    "ALTER TABLE transfers
+                     ADD COLUMN bytes_per_second INTEGER NOT NULL DEFAULT 0;",
+                )?;
+            }
             connection.execute_batch(
-                "ALTER TABLE transfers
-                 ADD COLUMN bytes_per_second INTEGER NOT NULL DEFAULT 0;",
+                "CREATE TABLE IF NOT EXISTS transfer_items (
+                   id TEXT PRIMARY KEY,
+                   transfer_id TEXT NOT NULL REFERENCES transfers(id) ON DELETE CASCADE,
+                   relative_path TEXT NOT NULL,
+                   entry_kind TEXT NOT NULL,
+                   size INTEGER NOT NULL,
+                   modified_unix_ms INTEGER NOT NULL,
+                   source_revision TEXT,
+                   temporary_ref TEXT,
+                   final_ref TEXT,
+                   UNIQUE(transfer_id, relative_path)
+                 );
+                 CREATE TABLE IF NOT EXISTS completed_chunks (
+                   transfer_id TEXT NOT NULL REFERENCES transfers(id) ON DELETE CASCADE,
+                   item_id TEXT NOT NULL REFERENCES transfer_items(id) ON DELETE CASCADE,
+                   chunk_index INTEGER NOT NULL,
+                   chunk_hash BLOB NOT NULL CHECK(length(chunk_hash) = 32),
+                   PRIMARY KEY(transfer_id, item_id, chunk_index)
+                 );
+                 CREATE TABLE IF NOT EXISTS settings (
+                   key TEXT PRIMARY KEY,
+                   value_json TEXT NOT NULL
+                 );
+                 CREATE INDEX IF NOT EXISTS idx_transfers_updated ON transfers(updated_unix_ms);
+                 CREATE INDEX IF NOT EXISTS idx_transfer_items_transfer_id ON transfer_items(transfer_id);
+                 CREATE INDEX IF NOT EXISTS idx_completed_chunks_transfer ON completed_chunks(transfer_id);",
             )?;
         }
         if existing_version != SCHEMA_VERSION {
@@ -106,6 +153,22 @@ impl TransferRepository {
         Ok(Self {
             connection: Mutex::new(connection),
         })
+    }
+
+    pub fn clear_history(&self) -> Result<usize, RepositoryError> {
+        let connection = self.lock()?;
+        let count = connection.execute(
+            "DELETE FROM transfers WHERE state IN ('\"completed\"', '\"failed\"', '\"cancelled\"')",
+            [],
+        )?;
+        let _ = connection.execute("PRAGMA incremental_vacuum;", []);
+        Ok(count)
+    }
+
+    pub fn delete_history_transfer(&self, id: &str) -> Result<bool, RepositoryError> {
+        let connection = self.lock()?;
+        let count = connection.execute("DELETE FROM transfers WHERE id = ?1", params![id])?;
+        Ok(count > 0)
     }
 
     pub fn schema_version(&self) -> Result<i64, RepositoryError> {
@@ -281,6 +344,52 @@ impl TransferRepository {
         rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
     }
 
+    pub fn list_history_files(&self) -> Result<Vec<HistoryFileRecord>, RepositoryError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT i.id, i.transfer_id, i.relative_path, i.entry_kind, i.size,
+                    i.temporary_ref, i.final_ref, t.peer_name, t.direction, t.updated_unix_ms
+             FROM transfer_items i
+             INNER JOIN transfers t ON i.transfer_id = t.id
+             WHERE t.state = '\"completed\"' OR t.state = 'completed'
+             ORDER BY t.updated_unix_ms DESC, i.relative_path ASC",
+        )?;
+        let rows = statement.query_map([], |row| {
+            let relative_path: String = row.get(2)?;
+            let raw_kind: String = row.get(3)?;
+            let kind: EntryKind = serde_json::from_str(&raw_kind).unwrap_or(EntryKind::File);
+            let temporary_ref: Option<String> = row.get(5)?;
+            let final_ref: Option<String> = row.get(6)?;
+            let raw_direction: String = row.get(8)?;
+            let direction: TransferDirection =
+                serde_json::from_str(&raw_direction).unwrap_or(TransferDirection::Incoming);
+
+            let local_path = match direction {
+                TransferDirection::Incoming => final_ref.or(temporary_ref),
+                TransferDirection::Outgoing => temporary_ref.or(final_ref),
+            };
+
+            let file_name = std::path::Path::new(&relative_path)
+                .file_name()
+                .map(|name| name.to_string_lossy().into_owned())
+                .unwrap_or_else(|| relative_path.clone());
+
+            Ok(HistoryFileRecord {
+                id: row.get(0)?,
+                transfer_id: row.get(1)?,
+                file_name,
+                relative_path,
+                local_path,
+                is_directory: kind == EntryKind::Directory,
+                size: row.get(4)?,
+                peer_name: row.get(7)?,
+                direction,
+                completed_unix_ms: row.get(9)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
     pub fn mark_chunk_complete(
         &self,
         transfer_id: Uuid,
@@ -413,10 +522,14 @@ pub enum RepositoryError {
 
 #[cfg(test)]
 mod tests {
-    use crate::model::{TransferSnapshot, TrustedPeer};
+    use crate::{
+        manifest::EntryKind,
+        model::{TransferSnapshot, TransferState, TrustedPeer},
+    };
     use rusqlite::Connection;
+    use uuid::Uuid;
 
-    use super::TransferRepository;
+    use super::{StoredTransferItem, TransferRepository};
 
     #[test]
     fn repository_restores_transfers_and_pinned_peers() {
@@ -473,11 +586,35 @@ mod tests {
             .save_transfer(&transfer)
             .expect("save after migration");
 
-        assert_eq!(repository.schema_version().expect("version"), 2);
+        assert_eq!(
+            repository.schema_version().expect("version"),
+            super::SCHEMA_VERSION
+        );
         assert_eq!(
             repository.list_transfers().expect("history"),
             vec![transfer]
         );
+    }
+
+    #[test]
+    fn clear_history_removes_completed_and_cancelled_transfers() {
+        let repository = TransferRepository::in_memory().expect("repository");
+        let active = TransferSnapshot::new_outgoing("p1", "活跃设备", 1, 100, 10);
+        let mut completed =
+            TransferSnapshot::new_incoming(Uuid::new_v4(), "p2", "完成设备", 1, 100, 100);
+        completed.state = TransferState::Completed;
+
+        repository.save_transfer(&active).expect("save active");
+        repository
+            .save_transfer(&completed)
+            .expect("save completed");
+
+        assert_eq!(repository.list_transfers().expect("list").len(), 2);
+        let deleted = repository.clear_history().expect("clear");
+        assert_eq!(deleted, 1);
+        let remaining = repository.list_transfers().expect("list");
+        assert_eq!(remaining.len(), 1);
+        assert_eq!(remaining[0].id, active.id);
     }
 
     #[test]
@@ -503,5 +640,49 @@ mod tests {
                 .remove_trusted_peer("peer-9")
                 .expect("second removal")
         );
+    }
+
+    #[test]
+    fn list_history_files_returns_completed_items() {
+        let repository = TransferRepository::in_memory().expect("repository");
+        let mut completed_transfer =
+            TransferSnapshot::new_outgoing("peer-1", "办公电脑", 2, 1024, 100);
+        completed_transfer.state = TransferState::Completed;
+        completed_transfer.updated_unix_ms = 200;
+        repository
+            .save_transfer(&completed_transfer)
+            .expect("save completed transfer");
+
+        let item1 = StoredTransferItem {
+            id: "item-1".to_owned(),
+            transfer_id: completed_transfer.id,
+            relative_path: "docs/report.pdf".to_owned(),
+            kind: EntryKind::File,
+            size: 512,
+            modified_unix_ms: 100,
+            source_revision: None,
+            temporary_ref: Some("D:/docs/report.pdf".to_owned()),
+            final_ref: None,
+        };
+        let item2 = StoredTransferItem {
+            id: "item-2".to_owned(),
+            transfer_id: completed_transfer.id,
+            relative_path: "images/photo.png".to_owned(),
+            kind: EntryKind::File,
+            size: 512,
+            modified_unix_ms: 100,
+            source_revision: None,
+            temporary_ref: Some("D:/images/photo.png".to_owned()),
+            final_ref: None,
+        };
+        repository.save_item(&item1).expect("save item 1");
+        repository.save_item(&item2).expect("save item 2");
+
+        let history = repository.list_history_files().expect("history files");
+        assert_eq!(history.len(), 2);
+        assert_eq!(history[0].file_name, "report.pdf");
+        assert_eq!(history[0].local_path, Some("D:/docs/report.pdf".to_owned()));
+        assert_eq!(history[0].peer_name, "办公电脑");
+        assert_eq!(history[1].file_name, "photo.png");
     }
 }

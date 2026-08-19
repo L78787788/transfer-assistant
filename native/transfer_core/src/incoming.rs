@@ -45,10 +45,9 @@ pub(crate) struct IncomingContext {
     pub(crate) directories: Vec<PathBuf>,
     pub(crate) temporary_root: PathBuf,
     pub(crate) remaining_chunks: AtomicU64,
-    scheduled_chunks: u64,
-    expected_by_channel: Mutex<Vec<u64>>,
     pub(crate) completed: Notify,
     pub(crate) repository: Arc<crate::persistence::TransferRepository>,
+    pub(crate) control: Arc<crate::outgoing::JobControl>,
     #[cfg(target_os = "android")]
     pub(crate) android_saf: bool,
 }
@@ -79,65 +78,16 @@ impl IncomingContext {
         self.token.lock().map(|token| *token).unwrap_or_default()
     }
 
-    pub(crate) fn configure_channels(&self, channel_count: u32) -> Result<(), LanError> {
-        let channel_count =
-            usize::try_from(channel_count).map_err(|_| LanError::InvalidDataChannel)?;
-        let mut expected = vec![0_u64; channel_count];
-        if channel_count != 0 {
-            let channel_count = channel_count as u64;
-            let base = self.scheduled_chunks / channel_count;
-            let extra = self.scheduled_chunks % channel_count;
-            for (index, count) in expected.iter_mut().enumerate() {
-                *count = base + u64::from((index as u64) < extra);
-            }
-        }
-        *self
-            .expected_by_channel
-            .lock()
-            .map_err(|_| LanError::LockPoisoned)? = expected;
+    pub(crate) fn configure_channels(&self, _channel_count: u32) -> Result<(), LanError> {
         Ok(())
     }
 
     pub(crate) fn validate_channel(&self, channel_index: u32) -> Result<(), LanError> {
         let index = usize::try_from(channel_index).map_err(|_| LanError::InvalidDataChannel)?;
-        if self
-            .expected_by_channel
-            .lock()
-            .map_err(|_| LanError::LockPoisoned)?
-            .get(index)
-            .is_none()
-        {
+        if index >= crate::chunk::MAX_DATA_CHANNELS {
             return Err(LanError::InvalidDataChannel);
         }
         Ok(())
-    }
-
-    pub(crate) fn mark_channel_chunk(&self, channel_index: u32) -> Result<(), LanError> {
-        let index = usize::try_from(channel_index).map_err(|_| LanError::InvalidDataChannel)?;
-        let mut expected = self
-            .expected_by_channel
-            .lock()
-            .map_err(|_| LanError::LockPoisoned)?;
-        let remaining = expected
-            .get_mut(index)
-            .ok_or(LanError::InvalidDataChannel)?;
-        if *remaining == 0 {
-            return Err(LanError::UnexpectedDataChannelEnd(channel_index));
-        }
-        *remaining -= 1;
-        Ok(())
-    }
-
-    pub(crate) fn channel_has_pending(&self, channel_index: u32) -> Result<bool, LanError> {
-        let index = usize::try_from(channel_index).map_err(|_| LanError::InvalidDataChannel)?;
-        Ok(self
-            .expected_by_channel
-            .lock()
-            .map_err(|_| LanError::LockPoisoned)?
-            .get(index)
-            .copied()
-            .ok_or(LanError::InvalidDataChannel)?
-            != 0)
     }
 
     pub(crate) fn resume_envelope(&self) -> Result<wire::Envelope, LanError> {
@@ -186,6 +136,7 @@ where
     }
     context.validate_channel(channel_index)?;
     loop {
+        context.control.checkpoint(&inner).await?;
         let header = match read_header(tls).await {
             Ok(header) => header,
             Err(crate::transfer::TransferIoError::Io(error))
@@ -194,20 +145,27 @@ where
                     std::io::ErrorKind::UnexpectedEof | std::io::ErrorKind::ConnectionReset
                 ) =>
             {
-                if context.channel_has_pending(channel_index)? {
-                    return Err(LanError::IncompleteDataChannel(channel_index));
+                if context.control.is_cancelled() || inner.transfer_is_cancelled(transfer_id) {
+                    return Err(LanError::Cancelled);
                 }
+                // 对端该通道工作窃取任务发送完毕或关闭
                 break;
             }
-            Err(error) => return Err(error.into()),
+            Err(error) => {
+                if context.control.is_cancelled() || inner.transfer_is_cancelled(transfer_id) {
+                    return Err(LanError::Cancelled);
+                }
+                return Err(error.into());
+            }
         };
         let file = context
             .files
             .get(&header.item_id)
             .ok_or_else(|| LanError::UnknownIncomingItem(header.item_id.clone()))?;
-        if inner.transfer_is_cancelled(transfer_id) {
+        if inner.transfer_is_cancelled(transfer_id) || context.control.is_cancelled() {
             return Err(LanError::Cancelled);
         }
+        context.control.checkpoint(&inner).await?;
         validate_header(
             &header,
             &transfer_id.to_string(),
@@ -219,7 +177,12 @@ where
             return Err(LanError::ChunkPlanMismatch);
         }
         let mut bytes = vec![0_u8; header.length as usize];
-        tls.read_exact(&mut bytes).await?;
+        if let Err(err) = tls.read_exact(&mut bytes).await {
+            if context.control.is_cancelled() || inner.transfer_is_cancelled(transfer_id) {
+                return Err(LanError::Cancelled);
+            }
+            return Err(err.into());
+        }
         let hash: [u8; 32] = header
             .blake3_hash
             .try_into()
@@ -229,44 +192,76 @@ where
             blake3_hash: hash,
             bytes,
         };
-        let _write_guard = file.write_lock.lock().await;
-        let already_complete = file
-            .resume
-            .lock()
-            .map_err(|_| LanError::LockPoisoned)?
-            .contains(header.chunk_index);
-        if already_complete {
-            if *blake3::hash(&chunk.bytes).as_bytes() != chunk.blake3_hash {
-                return Err(crate::storage::StorageError::HashMismatch {
-                    index: header.chunk_index,
-                }
-                .into());
-            }
-            continue;
-        }
+
         let target = file.target.try_clone()?;
         let written_length = u64::from(chunk.spec.length);
         let random_access = file.random_access;
-        tokio::task::spawn_blocking(move || {
-            if random_access {
-                write_verified_chunk(&target, &chunk)
-            } else {
-                write_sequential_verified_chunk(&target, &chunk)
+
+        if random_access {
+            // 支持定位 I/O：直接并发落盘，不争抢排他写锁
+            let already_complete = file
+                .resume
+                .lock()
+                .map_err(|_| LanError::LockPoisoned)?
+                .contains(header.chunk_index);
+            if already_complete {
+                if *blake3::hash(&chunk.bytes).as_bytes() != chunk.blake3_hash {
+                    return Err(crate::storage::StorageError::HashMismatch {
+                        index: header.chunk_index,
+                    }
+                    .into());
+                }
+                continue;
             }
-        })
-        .await??;
-        let mut resume = file.resume.lock().map_err(|_| LanError::LockPoisoned)?;
-        if resume.mark_complete(header.chunk_index)? {
-            inner.repository.mark_chunk_complete(
-                transfer_id,
-                &header.item_id,
-                header.chunk_index,
-                &hash,
-            )?;
-            inner.update_completed_bytes(transfer_id, written_length)?;
-            context.mark_channel_chunk(channel_index)?;
-            if context.remaining_chunks.fetch_sub(1, Ordering::AcqRel) == 1 {
-                context.completed.notify_waiters();
+
+            tokio::task::spawn_blocking(move || write_verified_chunk(&target, &chunk)).await??;
+
+            let mut resume = file.resume.lock().map_err(|_| LanError::LockPoisoned)?;
+            if resume.mark_complete(header.chunk_index)? {
+                inner.repository.mark_chunk_complete(
+                    transfer_id,
+                    &header.item_id,
+                    header.chunk_index,
+                    &hash,
+                )?;
+                inner.update_completed_bytes(transfer_id, written_length)?;
+                if context.remaining_chunks.fetch_sub(1, Ordering::AcqRel) == 1 {
+                    context.completed.notify_waiters();
+                }
+            }
+        } else {
+            // 不支持随机访问：使用 write_lock 保证顺序写安全
+            let _write_guard = file.write_lock.lock().await;
+            let already_complete = file
+                .resume
+                .lock()
+                .map_err(|_| LanError::LockPoisoned)?
+                .contains(header.chunk_index);
+            if already_complete {
+                if *blake3::hash(&chunk.bytes).as_bytes() != chunk.blake3_hash {
+                    return Err(crate::storage::StorageError::HashMismatch {
+                        index: header.chunk_index,
+                    }
+                    .into());
+                }
+                continue;
+            }
+
+            tokio::task::spawn_blocking(move || write_sequential_verified_chunk(&target, &chunk))
+                .await??;
+
+            let mut resume = file.resume.lock().map_err(|_| LanError::LockPoisoned)?;
+            if resume.mark_complete(header.chunk_index)? {
+                inner.repository.mark_chunk_complete(
+                    transfer_id,
+                    &header.item_id,
+                    header.chunk_index,
+                    &hash,
+                )?;
+                inner.update_completed_bytes(transfer_id, written_length)?;
+                if context.remaining_chunks.fetch_sub(1, Ordering::AcqRel) == 1 {
+                    context.completed.notify_waiters();
+                }
             }
         }
     }
@@ -390,10 +385,9 @@ pub(crate) fn prepare_incoming(
         directories,
         temporary_root,
         remaining_chunks: AtomicU64::new(remaining_chunks),
-        scheduled_chunks: remaining_chunks,
-        expected_by_channel: Mutex::new(Vec::new()),
         completed: Notify::new(),
         repository: inner.repository.clone(),
+        control: Arc::new(crate::outgoing::JobControl::new()),
         #[cfg(target_os = "android")]
         android_saf: false,
     })
@@ -509,10 +503,9 @@ fn prepare_incoming_android(
         directories: Vec::new(),
         temporary_root: PathBuf::new(),
         remaining_chunks: AtomicU64::new(remaining_chunks),
-        scheduled_chunks: remaining_chunks,
-        expected_by_channel: Mutex::new(Vec::new()),
         completed: Notify::new(),
         repository: inner.repository.clone(),
+        control: Arc::new(crate::outgoing::JobControl::new()),
         android_saf: true,
     })
 }

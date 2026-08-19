@@ -1,63 +1,176 @@
-# 传输助手
+# 传输助手 (Transfer Assistant)
 
-传输助手是面向 Windows 10/11 x64 与 Android 9+ arm64 的局域网原生文件传输应用。Flutter 只负责界面，Rust `TransferCore` 直接处理发现、TLS 连接、文件读写、BLAKE3 校验、断点位图和 SQLite 持久化，文件内容不会经过 Dart。
+<p align="center">
+  <strong>面向 Windows 10/11 x64 与 Android 9+ arm64 的极速局域网原生跨端文件传输应用</strong>
+</p>
 
-## 功能
+<p align="center">
+  <a href="#-功能特性">功能特性</a> •
+  <a href="#-快速下载安装">下载安装</a> •
+  <a href="#-使用方法">使用方法</a> •
+  <a href="#-核心技术架构">技术架构</a> •
+  <a href="#-开发与构建">开发构建</a> •
+  <a href="#-开源协议">开源协议</a>
+</p>
 
-- Windows 与 Android 设备任意两端互传文件、文件夹和批量任务。
-- mDNS 自动发现，并支持 `IP:端口` 手动连接。
-- TLS 1.3 双向加密、六位验证码配对和设备证书指纹固定。
-- 4 MiB 数据块、最多四条并行数据通道、暂停、取消、重试和断点续传。
-- 文件夹结构与空目录保留，拒绝路径穿越、符号链接和 Windows 重解析点。
-- Android 使用 SAF 和文件描述符，Windows 直接访问文件并支持托盘后台接收。
+---
 
-## 环境
+## 📖 项目介绍
 
-- Flutter 3.44.6 / Dart 3.12.2
-- Rust 1.97.1，安装 `aarch64-linux-android` 目标
-- Android SDK、NDK `29.0.14206865`、JDK 17
-- Visual Studio 2022 C++ Build Tools
-- Inno Setup 6（仅发布安装器需要）
+**传输助手（Transfer Assistant）** 是一款专为局域网内极速、安全跨端互传而设计的现代原生应用。
 
-检查环境：
+它彻底摒弃了传统文件传输工具对外部云端、公网服务器、中继节点或繁琐登录账户的依赖，利用局域网 mDNS 自动发现与 TLS 1.3 双向加密，实现 **Windows 电脑** 与 **Android 手机/平板** 之间的秒级互联与全速吞吐。
 
-```powershell
-.\scripts\check-environment.ps1
+### 🌟 为什么选择传输助手？
+
+- **极致速度**：Rust 原生内核直接读写文件系统与网络 Socket，文件数据流**零拷贝、零经过 Dart/Java 虚拟机堆内存**，大文件吞吐直达链路与磁盘物理极限（可达 100+ MB/s）。
+- **金融级安全**：原生 TLS 1.3 双向证书认证（mTLS），基于两端证书指纹确定性生成 6 位对称配对码，杜绝局域网窃听与中间人攻击。
+- **坚如磐石的断点续传**：4 MiB 块划分与 BLAKE3 逐块哈希校验，网络中断或应用重启后自动比对 SQLite 断点位图，**只传输缺失数据块**。
+- **纯净无感交互**：支持类似聊天会话流的设备即时传输体验、全窗口文件/文件夹拖拽、Windows 资源管理器右键一键发送、Android 系统分享菜单一键直达。
+
+---
+
+## ✨ 功能特性
+
+| 功能模块 | 特性描述 |
+|---|---|
+| 🔍 **自动发现与直连** | 基于 `_transassist._tcp.local.` mDNS 协议自动扫描局域网在线设备；支持输入 `IP:端口` 手动直连及离线热点 AP 模式。 |
+| 🛡️ **双向安全配对** | 首次连接显示双方一致的 6 位安全验证码，支持一键信任设备并持久化固定证书指纹。 |
+| ⚡ **多通道并发传输** | 最多 4 条并行 TCP 数据通道，配合 Work-Stealing（工作窃取）与预取双缓冲流水线，充分利用多核与带宽。 |
+| 📂 **复杂目录完美保留** | 完美保留多层嵌套文件夹结构与空目录；严格拦截路径穿越、绝对路径、软链接与 Windows 重解析点。 |
+| 🔄 **任务控制与断点恢复** | 支持实时暂停、继续、取消与重试；传输进度每秒测速并平滑节流更新，取消时自动清理 `.part` 临时文件。 |
+| 📱 **Android 深度保活** | 严格适配 Android 9~15，支持 SAF（存储访问框架）直接转移文件描述符（FD），配备前台服务、常驻进度通知与 Wi-Fi 高性能锁。 |
+| 💻 **Windows 深度集成** | 原生托盘最小化、托盘 Tooltip 实时显示传输百分比与速率、气泡通知点击唤醒窗口、资源管理器右键快捷菜单。 |
+| 📋 **即时便签与拖拽** | 支持设备间直接发送即时文本便签；支持在 Windows 窗口任意区域拖拽文件直接分发。 |
+
+---
+
+## 📥 快速下载安装
+
+前往 [GitHub Releases](https://github.com/L78787788/transfer-assistant/releases/latest) 下载最新正式版安装包：
+
+### 1. Windows 端 (Windows 10 / 11 64位)
+- 下载 `transfer-assistant-1.0.0-windows-x64-setup.exe`。
+- 双击安装程序，按照指引安装即可（安装程序会自动配置专用网络防火墙入站规则）。
+
+### 2. Android 端 (Android 9.0+ arm64)
+- 下载 `transfer-assistant-1.0.0-android-arm64.apk`。
+- 在 Android 设备上安装并授予必要的本地网络与通知权限。
+
+> 校验文件完整性：请参考发布包中附带的 `SHA256SUMS.txt` 进行哈希比对。
+
+---
+
+## 🚀 使用方法
+
+### 场景一：自动发现与两端互传文件
+
+1. **接入同一局域网**：将手机和电脑连接到同一个 Wi-Fi（或电脑连接手机开启的热点）。
+2. **打开应用**：在两端分别启动「传输助手」，应用会自动通过 mDNS 发现局域网内的对方设备。
+3. **选择设备发起传输**：
+   - 在主界面「传输会话」中点击发现的设备卡片；
+   - 点击底部的「发送文件」或「发送文件夹」，选择要发送的内容；
+   - 或在电脑端直接将文件/文件夹拖拽进窗口。
+4. **配对确认（仅首次）**：
+   - 首次连接时，两端屏幕会同时浮现相同的 **6 位安全配对码**；
+   - 核对两端数字一致后点击「确认接收」，勾选「记住此设备」后下次免配对。
+5. **极速传输**：传输将在后台以 4 路并行通道高速进行，通知栏/托盘将实时显示传输速度与进度。
+
+```
+┌──────────────┐                               ┌──────────────┐
+│  Windows 电脑 │ ──── mDNS 局域网无感发现 ──── │  Android 手机 │
+│              │ ◄─── TLS 1.3 双向证书认证 ───► │              │
+│  [传输助手]   │ ──── 4路并行通道 (BLAKE3) ──► │  [传输助手]   │
+└──────────────┘                               └──────────────┘
 ```
 
-## 开发检查
+---
 
+### 场景二：跨网段或手动 IP 直连
+
+当路由器禁用了 mDNS 多播组播广播时：
+1. 点击顶栏右上角的 **「+」号（IP 直连）** 按钮；
+2. 输入对端设备显示的 IP 地址与端口号（例如 `192.168.1.100:53317`）；
+3. 点击连接即可立即建立直连传输。
+
+---
+
+### 场景三：即时文本便签与剪贴板发送
+
+1. 进入目标设备的专属会话窗口；
+2. 在底部输入框中粘贴或输入文字、链接、代码段；
+3. 点击发送，对端将瞬间接收到该文本便签，并支持一键复制或在文本编辑器中打开。
+
+---
+
+### 场景四：Windows 资源管理器右键快速发送
+
+1. 在「设置」中开启 **「Windows 资源管理器右键菜单」** 开关；
+2. 在任意文件或文件夹上点击鼠标右键，选择 **「使用传输助手发送」**；
+3. 传输助手将自动载入所选文件，点击目标设备即可直接发出。
+
+---
+
+## 🏗️ 核心技术架构
+
+```
+Flutter UI (Material 3 / Glassmorphism)
+   ├── 传输会话 (Chat Stream)
+   ├── 任务流转与速率监控 (Transfers)
+   ├── 历史记录管理 (History & Search)
+   └── 设置与平台选项 (Settings)
+         │ JSON 命令 / 响应 / 事件通知 (零数据流经 Dart)
+         ▼
+C-ABI / Dart FFI 胶水层
+         │
+         ▼
+Rust TransferCore 内核
+   ├── Tokio 异步多线程运行时
+   ├── mDNS 局域网服务发现与多网卡过滤
+   ├── rustls TLS 1.3 双向证书加密 (mTLS)
+   ├── Protobuf 控制协议 (1 MiB 有界缓冲)
+   ├── 4 通道并行传输流水线 (Work-Stealing 任务池 + 预取双缓冲)
+   ├── BLAKE3 逐块完整性校验 (先校验后落盘)
+   ├── SQLite WAL 状态与断点位图持久化
+   └── 路径穿越与非法字符安全清洗
+         │
+         ├─► Windows C++: 本地直接文件 I/O、系统托盘、气泡通知、DPAPI 密钥保护
+         └─► Android Kotlin/JNI: SAF 文档流、FD 所有权转移、Keystore、前台服务保活
+```
+
+---
+
+## 🛠️ 开发与构建指南
+
+### 前置环境要求
+- **Flutter** 3.44+ / **Dart** 3.12+
+- **Rust** 1.97+，安装 Android 交叉编译目标：`rustup target add aarch64-linux-android`
+- **Android SDK**、**NDK 29.0+**、**JDK 17**
+- **Visual Studio 2022**（包含 C++ 桌面开发工作载荷）
+- **Inno Setup 6**（仅打包 Windows 安装包时需要）
+
+### 本地检查与测试
 ```powershell
+# 1. 检查 Rust 规范与运行全量测试套件 (36 个测试)
 cargo fmt --all -- --check
 cargo clippy -p transfer_core --all-targets -- -D warnings
 cargo test --workspace
 
-Set-Location app
+# 2. 检查 Flutter 端
+cd app
 flutter analyze
 flutter test
 ```
 
-包含中文字符的 Windows 路径可能影响 Flutter/Gradle。仓库本机使用 ASCII 盘符映射（例如 `subst T: <仓库路径>`）运行 Flutter 命令；发布脚本会自动建立并清理映射。
-
-## 发布
-
-首次发布会生成并持久保存 Android 发布密钥：
-
+### 全量打包发布 (Windows Setup EXE + Android APK)
 ```powershell
-.\scripts\ensure-android-signing.ps1
+# 运行自动化发布脚本
 .\scripts\build-release.ps1 -Version 1.0.0
 ```
+构建产物将输出至 `dist/` 目录并自动生成 `SHA256SUMS.txt` 校验和。
 
-`app/android/transassist-release.jks` 和 `app/android/key.properties` 已被 Git 忽略。两者必须一同离线备份，丢失后将无法用同一应用身份发布升级。发布物写入 `dist/`，同时生成 `SHA256SUMS.txt`。没有商业 Windows 代码签名证书时，Inno Setup EXE 保持未签名。
+---
 
-性能验收使用真实设备组合执行：
+## 📄 开源协议
 
-```powershell
-.\scripts\benchmark-transfer.ps1 `
-  -IperfServer 192.168.1.20 `
-  -SourceDirectory D:\BenchSource `
-  -ReceiveDirectory E:\BenchReceive `
-  -PrepareFile
-```
-
-脚本给出链路、发送盘读取和接收盘写入三者瓶颈的 80% 门槛。用 APP 传输生成的 10 GiB 不可压缩文件三次，再以 `-TransferSeconds` 输入稳定阶段耗时进行判定。
+本项目采用 [MIT](LICENSE) OR [Apache-2.0](LICENSE) 双重开源许可证。
