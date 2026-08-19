@@ -1,12 +1,12 @@
-﻿param(
+param(
     [string]$Version = '1.0.0',
     [string]$Flutter,
     [switch]$SkipChecks
 )
 
 $ErrorActionPreference = 'Stop'
-$repoRoot = Split-Path -Parent $PSScriptRoot
-$dist = Join-Path $repoRoot 'dist'
+$targetRepoRoot = (Get-Location).Path
+$targetDist = Join-Path $targetRepoRoot 'dist'
 
 function Resolve-Flutter {
     if ($Flutter -and (Test-Path -LiteralPath $Flutter)) {
@@ -43,22 +43,23 @@ function Resolve-Iscc {
 }
 
 function New-AsciiWorkspaceCopy {
-    # Gradle 对含中文的真实路径解析会失败（File.parent 为 null），
-    # subst/junction 也会被 Gradle 解析回中文真实路径，因此把源码
-    # 增量复制到纯 ASCII 路径构建。副本保留 Gradle/CMake 缓存以加速
-    # 后续构建；产物目录与仓库元数据不复制。
-    $copyRoot = 'E:\ta-build'
+    param(
+        [string]$SourceDir,
+        [string]$TargetDir = 'E:\ta-build'
+    )
     $excluded = @(
         '/XD', 'target', 'dist', 'build', '.dart_tool', '.gradle',
         '.git', '.reasonix', '.zcode', '.mimosa', 'node_modules'
     )
     $excluded += @('/XF', '*.jks', 'key.properties')
-    New-Item -ItemType Directory -Force -Path $copyRoot | Out-Null
-    & robocopy.exe $repoRoot $copyRoot /E @excluded /NFL /NDL /NJH /NP /R:1 /W:1
-    if ($LASTEXITCODE -gt 7) {
-        throw "Unable to copy the repository to the ASCII workspace ($copyRoot)."
+    if (-not (Test-Path -LiteralPath $TargetDir)) {
+        New-Item -ItemType Directory -Force -Path $TargetDir | Out-Null
     }
-    return @{ Root = $copyRoot }
+    & robocopy.exe $SourceDir $TargetDir /E @excluded /NFL /NDL /NJH /NP /R:1 /W:1
+    if ($LASTEXITCODE -gt 7) {
+        throw "Unable to copy the repository to the ASCII workspace ($TargetDir)."
+    }
+    return @{ Root = $TargetDir }
 }
 
 $flutterTool = Resolve-Flutter
@@ -75,56 +76,52 @@ if (-not $env:PUB_HOSTED_URL) {
     $env:PUB_HOSTED_URL = 'https://pub.flutter-io.cn'
 }
 
-$workspaceCopy = New-AsciiWorkspaceCopy
-try {
-    $appRoot = Join-Path $workspaceCopy.Root 'app'
-    if (-not $SkipChecks) {
-        Push-Location $repoRoot
-        try {
-            & cargo.exe fmt --all -- --check
-            if ($LASTEXITCODE -ne 0) { throw 'cargo fmt failed.' }
-            & cargo.exe clippy -p transfer_core --all-targets -- -D warnings
-            if ($LASTEXITCODE -ne 0) { throw 'cargo clippy failed.' }
-            & cargo.exe test --workspace
-            if ($LASTEXITCODE -ne 0) { throw 'cargo test failed.' }
-        } finally {
-            Pop-Location
-        }
-        Push-Location $appRoot
-        try {
-            & $flutterTool analyze
-            if ($LASTEXITCODE -ne 0) { throw 'flutter analyze failed.' }
-            & $flutterTool test
-            if ($LASTEXITCODE -ne 0) { throw 'flutter test failed.' }
-        } finally {
-            Pop-Location
-        }
+$workspaceCopy = New-AsciiWorkspaceCopy -SourceDir $targetRepoRoot
+$appRoot = Join-Path $workspaceCopy.Root 'app'
+
+if (-not $SkipChecks) {
+    Push-Location $targetRepoRoot
+    try {
+        & cargo.exe fmt --all -- --check
+        if ($LASTEXITCODE -ne 0) { throw 'cargo fmt failed.' }
+        & cargo.exe clippy -p transfer_core --all-targets -- -D warnings
+        if ($LASTEXITCODE -ne 0) { throw 'cargo clippy failed.' }
+        & cargo.exe test --workspace
+        if ($LASTEXITCODE -ne 0) { throw 'cargo test failed.' }
+    } finally {
+        Pop-Location
     }
 
     Push-Location $appRoot
     try {
-        & $flutterTool build apk --release --target-platform android-arm64
-        if ($LASTEXITCODE -ne 0) { throw 'Android Release build failed.' }
-        & $flutterTool build windows --release
-        if ($LASTEXITCODE -ne 0) { throw 'Windows Release build failed.' }
+        & $flutterTool analyze
+        if ($LASTEXITCODE -ne 0) { throw 'flutter analyze failed.' }
+        & $flutterTool test
+        if ($LASTEXITCODE -ne 0) { throw 'flutter test failed.' }
     } finally {
         Pop-Location
     }
-} finally {
-    # 保留 ASCII 副本及其构建缓存，供下一次发布构建增量复用。
 }
 
-New-Item -ItemType Directory -Force -Path $dist | Out-Null
+Push-Location $appRoot
+try {
+    & $flutterTool build apk --release --target-platform android-arm64
+    if ($LASTEXITCODE -ne 0) { throw 'Android Release build failed.' }
+    & $flutterTool build windows --release
+    if ($LASTEXITCODE -ne 0) { throw 'Windows Release build failed.' }
+} finally {
+    Pop-Location
+}
+
+New-Item -ItemType Directory -Force -Path $targetDist | Out-Null
 $apkSource = Join-Path $workspaceCopy.Root 'app\build\app\outputs\flutter-apk\app-release.apk'
 if (-not (Test-Path -LiteralPath $apkSource)) {
     throw "Expected APK was not produced: $apkSource"
 }
-$apkTarget = Join-Path $dist "transfer-assistant-$Version-android-arm64.apk"
+$apkTarget = Join-Path $targetDist "transfer-assistant-$Version-android-arm64.apk"
 Copy-Item -LiteralPath $apkSource -Destination $apkTarget -Force
 
-# 安装器必须在 ASCII 副本目录下编译：MySourceDir/OutputDir 相对当前目录解析，
-# 在副本下才能打包到本次构建的 Release 产物。
-Push-Location $workspaceCopy.Root
+# 瀹夎鍣ㄥ繀椤诲湪 ASCII 鍓湰鐩綍涓嬬紪璇戯細MySourceDir/OutputDir 鐩稿褰撳墠鐩綍瑙ｆ瀽锛?# 鍦ㄥ壇鏈笅鎵嶈兘鎵撳寘鍒版湰娆℃瀯寤虹殑 Release 浜х墿銆?Push-Location $workspaceCopy.Root
 try {
     & $iscc "/DMyAppVersion=$Version" (Join-Path $workspaceCopy.Root 'installer\transfer-assistant.iss')
 } finally {
@@ -137,16 +134,28 @@ $installerSource = Join-Path $workspaceCopy.Root "dist\transfer-assistant-$Versi
 if (-not (Test-Path -LiteralPath $installerSource)) {
     throw "Expected installer was not produced: $installerSource"
 }
-Copy-Item -LiteralPath $installerSource -Destination $dist -Force
+Copy-Item -LiteralPath $installerSource -Destination $targetDist -Force
 
-$artifacts = Get-ChildItem -LiteralPath $dist -File |
+# Sync Release binaries to local repo
+$localReleaseDir = Join-Path $targetRepoRoot 'app\build\windows\x64\runner\Release'
+New-Item -ItemType Directory -Force -Path $localReleaseDir | Out-Null
+$buildReleaseDir = Join-Path $workspaceCopy.Root 'app\build\windows\x64\runner\Release'
+Copy-Item -Path "$buildReleaseDir\*" -Destination $localReleaseDir -Recurse -Force
+
+$geminiDraftDir = 'D:\草稿箱\Gemini\传输助手Gemini'
+if (Test-Path -Path $geminiDraftDir) {
+    Copy-Item -LiteralPath $apkTarget -Destination $geminiDraftDir -Force
+    Copy-Item -LiteralPath (Join-Path $targetDist "transfer-assistant-$Version-windows-x64-setup.exe") -Destination $geminiDraftDir -Force
+}
+
+$artifacts = Get-ChildItem -Path $targetDist -File |
     Where-Object Extension -In '.apk', '.exe' |
     Sort-Object Name
 $hashLines = foreach ($artifact in $artifacts) {
     $hash = (Get-FileHash -LiteralPath $artifact.FullName -Algorithm SHA256).Hash.ToLowerInvariant()
     "$hash  $($artifact.Name)"
 }
-$hashPath = Join-Path $dist 'SHA256SUMS.txt'
+$hashPath = Join-Path $targetDist 'SHA256SUMS.txt'
 [IO.File]::WriteAllLines($hashPath, $hashLines, [Text.UTF8Encoding]::new($false))
 Write-Host 'Release artifacts:'
 $artifacts | ForEach-Object { Write-Host $_.FullName }
