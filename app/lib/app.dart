@@ -43,7 +43,7 @@ class _TransferAssistantAppState extends State<TransferAssistantApp> {
           _cachedDarkTheme = AppTheme.build(style, Brightness.dark);
         }
         return MaterialApp(
-          title: '传输助手',
+          title: '互传',
           debugShowCheckedModeBanner: false,
           themeAnimationDuration: Duration.zero,
           theme: _cachedLightTheme,

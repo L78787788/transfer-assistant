@@ -26,6 +26,12 @@ class TransferForegroundService : Service() {
                 manager.deleteNotificationChannel("background_receive")
                 manager.deleteNotificationChannel("transassist_bg_channel_v2")
                 manager.deleteNotificationChannel("transassist_bg_channel_v3")
+                manager.deleteNotificationChannel("transassist_bg_channel_v4")
+                manager.deleteNotificationChannel("transassist_bg_channel_v5")
+                manager.deleteNotificationChannel("transassist_bg_channel_v6")
+                manager.deleteNotificationChannel("transassist_event_channel_v2")
+                manager.deleteNotificationChannel("transassist_event_channel_v3")
+                manager.deleteNotificationChannel("transassist_event_channel_v4")
             } catch (_: Exception) {}
             val channel = NotificationChannel(
                 CHANNEL_ID,
@@ -37,10 +43,6 @@ class TransferForegroundService : Service() {
             }
             manager.createNotificationChannel(channel)
         }
-        val appIconBitmap = try {
-            BitmapFactory.decodeResource(resources, R.mipmap.ic_launcher)
-        } catch (_: Exception) { null }
-
         val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
             Notification.Builder(this, CHANNEL_ID)
         } else {
@@ -48,13 +50,8 @@ class TransferForegroundService : Service() {
             Notification.Builder(this)
         }
             .setSmallIcon(R.drawable.ic_notification)
-            .apply {
-                if (appIconBitmap != null) {
-                    setLargeIcon(appIconBitmap)
-                }
-            }
             .setColor(0xFF0284C7.toInt())
-            .setContentTitle("传输助手")
+            .setContentTitle("互传")
             .setContentText("局域网极速发现与传输服务运行中")
             .setOngoing(true)
             .apply {
@@ -142,7 +139,7 @@ class TransferForegroundService : Service() {
     override fun onBind(intent: Intent?): IBinder? = null
 
     companion object {
-        private const val CHANNEL_ID = "transassist_bg_channel_v4"
+        private const val CHANNEL_ID = "transassist_bg_channel_v7"
         private const val NOTIFICATION_ID = 53317
 
         fun setBackgroundEnabled(context: Context, enabled: Boolean) {
@@ -175,7 +172,7 @@ class TransferForegroundService : Service() {
         private const val PREFERENCES = "service_state"
         private const val BACKGROUND_KEY = "background_receive"
         private const val TRANSFER_KEY = "active_transfer"
-        private const val EVENTS_CHANNEL_ID = "transassist_event_channel_v3"
+        private const val EVENTS_CHANNEL_ID = "transassist_event_channel_v5"
 
         fun updateProgressNotification(
             context: Context,
@@ -195,10 +192,6 @@ class TransferForegroundService : Service() {
                 )
             } else null
 
-            val appIconBitmap = try {
-                BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher)
-            } catch (_: Exception) { null }
-
             val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Notification.Builder(context, CHANNEL_ID)
             } else {
@@ -206,13 +199,8 @@ class TransferForegroundService : Service() {
                 Notification.Builder(context)
             }
                 .setSmallIcon(R.drawable.ic_notification)
-                .apply {
-                    if (appIconBitmap != null) {
-                        setLargeIcon(appIconBitmap)
-                    }
-                }
                 .setColor(0xFF0284C7.toInt())
-                .setContentTitle(if (active) "传输进行中 · $title" else "传输助手")
+                .setContentTitle(if (active) "传输进行中 · $title" else "互传")
                 .setContentText(if (active) "$speedText · ${percent}%" else "局域网极速发现与传输服务运行中")
                 .setOngoing(true)
                 .apply {
@@ -252,10 +240,6 @@ class TransferForegroundService : Service() {
                 )
             } else null
 
-            val appIconBitmap = try {
-                BitmapFactory.decodeResource(context.resources, R.mipmap.ic_launcher)
-            } catch (_: Exception) { null }
-
             val notification = if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.O) {
                 Notification.Builder(context, EVENTS_CHANNEL_ID)
             } else {
@@ -263,11 +247,6 @@ class TransferForegroundService : Service() {
                 Notification.Builder(context)
             }
                 .setSmallIcon(R.drawable.ic_notification)
-                .apply {
-                    if (appIconBitmap != null) {
-                        setLargeIcon(appIconBitmap)
-                    }
-                }
                 .setColor(0xFF0284C7.toInt())
                 .setContentTitle(title)
                 .setContentText(body)

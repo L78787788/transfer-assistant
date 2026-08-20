@@ -335,7 +335,7 @@ class _DesktopNavigation extends StatelessWidget {
                   crossAxisAlignment: CrossAxisAlignment.start,
                   children: [
                     Text(
-                      '传输助手',
+                      '互传',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
                             fontWeight: FontWeight.w800,
                             letterSpacing: -0.4,
@@ -843,7 +843,7 @@ class _FirstLaunchNamingOverlayState extends State<_FirstLaunchNamingOverlay> {
                       ),
                       const SizedBox(height: 20),
                       Text(
-                        '欢迎使用传输助手',
+                        '欢迎使用互传',
                         textAlign: TextAlign.center,
                         style: TextStyle(
                           fontSize: 20,

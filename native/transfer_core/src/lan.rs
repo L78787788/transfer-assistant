@@ -32,7 +32,6 @@ use crate::{
 };
 
 const DEFAULT_PORT: u16 = 53_317;
-pub(crate) const MAX_MANIFEST_ENTRIES: usize = 1_000_000;
 
 // 发送端接口从 outgoing 模块重导出，保持 core 的调用路径不变。
 pub(crate) use crate::outgoing::{

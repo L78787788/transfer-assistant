@@ -266,7 +266,7 @@ impl MdnsHandle {
                             }
                         }
                     }
-                    match receiver.recv_timeout(Duration::from_millis(500)) {
+                    match receiver.recv_timeout(Duration::from_millis(150)) {
                         Ok(ServiceEvent::ServiceResolved(info)) => {
                             let Some(peer_id) = info.get_property_val_str("id") else {
                                 continue;
@@ -349,12 +349,16 @@ impl MdnsHandle {
 
     pub(crate) fn shutdown(mut self) {
         self.stopped.store(true, Ordering::Release);
-        let _ = self.daemon.stop_browse(SERVICE_TYPE);
-        let _ = self.daemon.unregister(&self.fullname);
-        let _ = self.daemon.shutdown();
-        if let Some(browser) = self.browser.take() {
-            let _ = browser.join();
-        }
+        let daemon = self.daemon.clone();
+        let fullname = self.fullname.clone();
+        let _ = thread::Builder::new()
+            .name("transassist-mdns-shutdown".to_owned())
+            .spawn(move || {
+                let _ = daemon.stop_browse(SERVICE_TYPE);
+                let _ = daemon.unregister(&fullname);
+                let _ = daemon.shutdown();
+            });
+        drop(self.browser.take());
     }
 }
 

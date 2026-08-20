@@ -127,58 +127,6 @@ class _DualArrowPainter extends CustomPainter {
       oldDelegate.color != color;
 }
 
-/// 首页 Hero 卡片右侧半透明大尺寸双向箭头（带 6px 水平往复位移微动效）
-class BrandHeroGraphic extends StatefulWidget {
-  const BrandHeroGraphic({super.key, this.size = 90});
-
-  final double size;
-
-  @override
-  State<BrandHeroGraphic> createState() => _BrandHeroGraphicState();
-}
-
-class _BrandHeroGraphicState extends State<BrandHeroGraphic>
-    with SingleTickerProviderStateMixin {
-  late final AnimationController _controller;
-
-  @override
-  void initState() {
-    super.initState();
-    _controller = AnimationController(
-      vsync: this,
-      duration: const Duration(milliseconds: 2200),
-    )..repeat(reverse: true);
-  }
-
-  @override
-  void dispose() {
-    _controller.dispose();
-    super.dispose();
-  }
-
-  @override
-  Widget build(BuildContext context) {
-    return AnimatedBuilder(
-      animation: _controller,
-      builder: (context, child) {
-        final shift = (_controller.value * 2 - 1) * 6; // -6px 到 +6px
-        return Transform.translate(
-          offset: Offset(shift, 0),
-          child: SizedBox(
-            width: widget.size,
-            height: widget.size * 0.75,
-            child: CustomPaint(
-              painter: _DualArrowPainter(
-                color: Colors.white.withValues(alpha: 0.28),
-              ),
-            ),
-          ),
-        );
-      },
-    );
-  }
-}
-
 // =========================================================================
 // 2. 现代纯净实体卡片 & 状态组件
 // =========================================================================

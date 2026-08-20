@@ -244,14 +244,14 @@ void main() {
     await tester.pumpWidget(TransferAssistantApp(controller: controller));
     await tester.settleFast();
 
-    expect(find.text('欢迎使用传输助手'), findsOneWidget);
+    expect(find.text('欢迎使用互传'), findsOneWidget);
     expect(find.text('完成并开启极速传输'), findsOneWidget);
 
     await tester.tap(find.text('完成并开启极速传输'));
     await tester.settleFast();
 
     expect(controller.settings.hasCompletedFirstSetup, isTrue);
-    expect(find.text('欢迎使用传输助手'), findsNothing);
+    expect(find.text('欢迎使用互传'), findsNothing);
   });
 }
 
@@ -380,4 +380,10 @@ class _FakeCore implements TransferCoreClient {
 
   @override
   Future<void> removeTrustedPeer(String peerId) async {}
+
+  @override
+  Future<List<TrustedPeerInfo>> listTrustedPeers() async => const [];
+
+  @override
+  Future<int> clearTrustedPeers() async => 0;
 }

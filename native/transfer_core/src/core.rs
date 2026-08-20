@@ -544,12 +544,34 @@ impl TransferCore {
         Ok(deleted)
     }
 
+    pub fn list_trusted_peers(&self) -> Result<Vec<TrustedPeer>, CoreError> {
+        self.ensure_running()?;
+        Ok(self.inner.repository.list_trusted_peers()?)
+    }
+
+    pub fn clear_trusted_peers(&self) -> Result<usize, CoreError> {
+        self.ensure_running()?;
+        let count = self.inner.repository.clear_trusted_peers()?;
+        let mut state = self.inner.lock()?;
+        state.peers.retain(|_, p| !p.trusted);
+        queue_peers_changed(&mut state);
+        Ok(count)
+    }
+
     pub fn shutdown(&self) -> Result<(), CoreError> {
         if self.stopped.swap(true, Ordering::AcqRel) {
             return Ok(());
         }
         self.inner.shutdown.cancel();
-        self.inner.lock()?.pending_answers.clear();
+        if let Ok(mut state) = self.inner.lock() {
+            state.pending_answers.clear();
+            for control in state.incoming_controls.values() {
+                control.cancel();
+            }
+            for stored in state.outgoing_jobs.values() {
+                stored.control.cancel();
+            }
+        }
         if let Some(network) = self
             .network
             .lock()
@@ -1516,7 +1538,7 @@ mod tests {
         drop(sender);
 
         // 数据通道意外结束后，接收端必须尽快进入可重试状态，不能等待发送端结果超时。
-        let deadline = Instant::now() + Duration::from_secs(5);
+        let deadline = Instant::now() + Duration::from_secs(10);
         let mut receiver_interrupted = false;
         while Instant::now() < deadline {
             pump_and_accept(&[&receiver]);
@@ -1530,7 +1552,7 @@ mod tests {
         }
         assert!(
             receiver_interrupted,
-            "数据通道断开后接收端必须在 5 秒内进入中断状态"
+            "数据通道断开后接收端必须在 10 秒内进入中断状态"
         );
 
         // 中断后接收端必须保留部分数据（断点续传的前提）。

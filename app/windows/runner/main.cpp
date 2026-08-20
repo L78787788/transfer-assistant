@@ -1,5 +1,4 @@
 #include <flutter/dart_project.h>
-#include <flutter/dart_project.h>
 #include <flutter/flutter_view_controller.h>
 #include <windows.h>
 
@@ -13,7 +12,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
       L"Local\\TransAssist_SingleInstance_Mutex_Gemini";
   HANDLE single_instance_mutex = ::CreateMutexW(nullptr, TRUE, kUniqueMutexName);
   if (::GetLastError() == ERROR_ALREADY_EXISTS) {
-    HWND existing_window = ::FindWindowW(L"FLUTTER_RUNNER_WIN32_WINDOW", L"传输助手");
+    HWND existing_window = ::FindWindowW(L"FLUTTER_RUNNER_WIN32_WINDOW", L"互传");
     if (existing_window != nullptr) {
       if (::IsIconic(existing_window) || !::IsWindowVisible(existing_window)) {
         ::ShowWindow(existing_window, SW_RESTORE);
@@ -47,7 +46,7 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
   FlutterWindow window(project);
   Win32Window::Point origin(10, 10);
   Win32Window::Size size(1280, 720);
-  if (!window.Create(L"传输助手", origin, size)) {
+  if (!window.Create(L"互传", origin, size)) {
     if (single_instance_mutex != nullptr) {
       ::ReleaseMutex(single_instance_mutex);
       ::CloseHandle(single_instance_mutex);
@@ -69,5 +68,5 @@ int APIENTRY wWinMain(_In_ HINSTANCE instance, _In_opt_ HINSTANCE prev,
     ::CloseHandle(single_instance_mutex);
   }
 
-  return EXIT_SUCCESS;
+  ::ExitProcess(EXIT_SUCCESS);
 }

@@ -128,16 +128,45 @@ bool Win32Window::Create(const std::wstring& title,
   const wchar_t* window_class =
       WindowClassRegistrar::GetInstance()->GetWindowClass();
 
-  const POINT target_point = {static_cast<LONG>(origin.x),
-                              static_cast<LONG>(origin.y)};
-  HMONITOR monitor = MonitorFromPoint(target_point, MONITOR_DEFAULTTONEAREST);
+  // 获取当前屏幕（优先光标所在屏幕，回退主屏幕）的工作区域
+  POINT cursor_pos;
+  HMONITOR monitor = nullptr;
+  if (::GetCursorPos(&cursor_pos)) {
+    monitor = ::MonitorFromPoint(cursor_pos, MONITOR_DEFAULTTOPRIMARY);
+  } else {
+    monitor = ::MonitorFromPoint({0, 0}, MONITOR_DEFAULTTOPRIMARY);
+  }
+
+  MONITORINFO monitor_info = {sizeof(MONITORINFO)};
+  int work_x = 0;
+  int work_y = 0;
+  int work_w = 1920;
+  int work_h = 1080;
+  if (::GetMonitorInfoW(monitor, &monitor_info)) {
+    work_x = monitor_info.rcWork.left;
+    work_y = monitor_info.rcWork.top;
+    work_w = monitor_info.rcWork.right - monitor_info.rcWork.left;
+    work_h = monitor_info.rcWork.bottom - monitor_info.rcWork.top;
+  }
+
   UINT dpi = FlutterDesktopGetDpiForMonitor(monitor);
   double scale_factor = dpi / 96.0;
 
+  int scaled_width = Scale(size.width, scale_factor);
+  int scaled_height = Scale(size.height, scale_factor);
+
+  // 确保窗口尺寸不超过工作区
+  if (scaled_width > work_w) scaled_width = work_w;
+  if (scaled_height > work_h) scaled_height = work_h;
+
+  // 计算屏幕中心坐标
+  int pos_x = work_x + (work_w - scaled_width) / 2;
+  int pos_y = work_y + (work_h - scaled_height) / 2;
+
   HWND window = CreateWindow(
       window_class, title.c_str(), WS_OVERLAPPEDWINDOW,
-      Scale(origin.x, scale_factor), Scale(origin.y, scale_factor),
-      Scale(size.width, scale_factor), Scale(size.height, scale_factor),
+      pos_x, pos_y,
+      scaled_width, scaled_height,
       nullptr, nullptr, GetModuleHandle(nullptr), this);
 
   if (!window) {

@@ -102,7 +102,11 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
         ::ShowWindow(hwnd, SW_HIDE);
         return 0;
       }
-      break;
+      // 退出时第 1 毫秒立即隐藏窗口与移除托盘图标，彻底杜绝视觉卡顿与无响应
+      RemoveTrayIcon();
+      ::ShowWindow(hwnd, SW_HIDE);
+      ::DestroyWindow(hwnd);
+      return 0;
     case kTrayMessage:
       if (lparam == WM_LBUTTONUP || lparam == WM_LBUTTONDBLCLK || lparam == NIN_BALLOONUSERCLICK) {
         ::ShowWindow(hwnd, SW_RESTORE);
@@ -115,7 +119,7 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
         ::GetCursorPos(&cursor);
         ::SetForegroundWindow(hwnd);
         HMENU menu = ::CreatePopupMenu();
-        ::AppendMenuW(menu, MF_STRING, IDM_TRAY_SHOW, L"打开传输助手");
+        ::AppendMenuW(menu, MF_STRING, IDM_TRAY_SHOW, L"打开互传");
         ::AppendMenuW(menu, MF_SEPARATOR, 0, nullptr);
         ::AppendMenuW(menu, MF_STRING, IDM_TRAY_EXIT, L"退出");
         ::TrackPopupMenu(menu, TPM_RIGHTALIGN | TPM_BOTTOMALIGN | TPM_RIGHTBUTTON,
@@ -132,7 +136,8 @@ FlutterWindow::MessageHandler(HWND hwnd, UINT const message,
       }
       if (LOWORD(wparam) == IDM_TRAY_EXIT && HIWORD(wparam) == 0) {
         RemoveTrayIcon();
-        ::PostQuitMessage(0);
+        ::ShowWindow(hwnd, SW_HIDE);
+        ::DestroyWindow(hwnd);
         return 0;
       }
       break;
@@ -178,7 +183,7 @@ void FlutterWindow::UpdateTrayIcon() {
   tray_icon_.hIcon = static_cast<HICON>(::LoadImage(
       ::GetModuleHandle(nullptr), MAKEINTRESOURCE(IDI_APP_ICON), IMAGE_ICON, 16,
       16, LR_DEFAULTCOLOR));
-  wcscpy_s(tray_icon_.szTip, L"传输助手");
+  wcscpy_s(tray_icon_.szTip, L"互传");
   ::Shell_NotifyIcon(NIM_ADD, &tray_icon_);
 }
 
@@ -208,7 +213,7 @@ void FlutterWindow::UpdateTrayStatus(const std::string& status_text) {
   if (tray_icon_.cbSize == 0) {
     return;
   }
-  std::wstring tip = Utf16FromUtf8(status_text.empty() ? "传输助手" : status_text);
+  std::wstring tip = Utf16FromUtf8(status_text.empty() ? "互传" : status_text);
   if (tip.length() >= sizeof(tray_icon_.szTip) / sizeof(tray_icon_.szTip[0])) {
     tip = tip.substr(0, sizeof(tray_icon_.szTip) / sizeof(tray_icon_.szTip[0]) - 1);
   }

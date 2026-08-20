@@ -40,6 +40,9 @@ class AppController extends ChangeNotifier {
       settings.deviceName.isNotEmpty ? settings.deviceName : '这台设备';
   List<HistoryFileItem> historyFiles = const [];
   var isLoadingHistory = false;
+  List<TrustedPeerInfo> trustedPeers = const [];
+  var isLoadingTrustedPeers = false;
+  var isNotificationPermissionGranted = true;
   TransferOffer? pendingOffer;
   String? sharedTextPayload;
   List<SourceHandle>? sharedFileSources;
@@ -61,6 +64,10 @@ class AppController extends ChangeNotifier {
         identityWrapKey: paths.identityWrapKey,
         logDirectory: paths.logDirectory,
       );
+      if (Platform.isAndroid) {
+        unawaited(checkNotificationPermission());
+      }
+      unawaited(loadTrustedPeers());
       platform.setFilesDroppedHandler((droppedFiles) {
         if (droppedFiles.isNotEmpty) {
           sharedFileSources = droppedFiles;
@@ -222,13 +229,52 @@ class AppController extends ChangeNotifier {
     }
   }
 
+  Future<void> loadTrustedPeers() async {
+    isLoadingTrustedPeers = true;
+    notifyListeners();
+    try {
+      trustedPeers = await core.listTrustedPeers();
+    } catch (_) {
+    } finally {
+      isLoadingTrustedPeers = false;
+      notifyListeners();
+    }
+  }
+
   Future<void> removeTrustedPeer(String peerId) async {
     try {
       await core.removeTrustedPeer(peerId);
+      await loadTrustedPeers();
     } catch (error) {
       errorMessage = '移除可信设备失败：$error';
       notifyListeners();
     }
+  }
+
+  Future<void> clearTrustedPeers() async {
+    try {
+      await core.clearTrustedPeers();
+      await loadTrustedPeers();
+      showNotice('已清空全部可信设备绑定');
+    } catch (error) {
+      errorMessage = '清空可信设备失败：$error';
+      notifyListeners();
+    }
+  }
+
+  Future<void> checkNotificationPermission() async {
+    try {
+      isNotificationPermissionGranted = await platform.checkNotificationPermission();
+      notifyListeners();
+    } catch (_) {}
+  }
+
+  Future<void> requestNotificationPermission() async {
+    try {
+      await platform.requestNotificationPermission();
+      await Future.delayed(const Duration(milliseconds: 600));
+      await checkNotificationPermission();
+    } catch (_) {}
   }
 
   Future<void> loadHistoryFiles() async {
@@ -467,7 +513,7 @@ class AppController extends ChangeNotifier {
         } else {
           unawaited(
             platform.updateNotificationProgress(
-              title: '传输助手',
+              title: '互传',
               speed: '',
               percent: 0,
               active: false,

@@ -633,9 +633,6 @@ where
         if page.transfer_id != transfer_id.to_string() || page.page_index != expected_page {
             return Err(LanError::InvalidManifestPage);
         }
-        if entries.len().saturating_add(page.entries.len()) > crate::lan::MAX_MANIFEST_ENTRIES {
-            return Err(LanError::TooManyItems);
-        }
         for entry in page.entries {
             let kind = match wire::EntryKind::try_from(entry.kind) {
                 Ok(wire::EntryKind::File) => EntryKind::File,

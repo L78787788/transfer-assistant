@@ -262,8 +262,9 @@ pub unsafe extern "C" fn transassist_invoke(request: *const c_char) -> *mut c_ch
                 json!({"ok": true})
             }
             "shutdown" => {
-                engine.core.shutdown().map_err(|error| error.to_string())?;
-                *slot = None;
+                if let Some(engine) = slot.take() {
+                    let _ = engine.core.shutdown();
+                }
                 json!({"ok": true})
             }
             "remove_trusted_peer" => {
@@ -273,6 +274,33 @@ pub unsafe extern "C" fn transassist_invoke(request: *const c_char) -> *mut c_ch
                     .remove_trusted_peer(peer_id)
                     .map_err(|error| error.to_string())?;
                 json!({"ok": true, "removed": removed})
+            }
+            "list_trusted_peers" => {
+                let peers = engine
+                    .core
+                    .list_trusted_peers()
+                    .map_err(|error| error.to_string())?;
+                let list: Vec<Value> = peers
+                    .into_iter()
+                    .map(|p| {
+                        json!({
+                            "peer_id": p.peer_id,
+                            "display_name": p.display_name,
+                            "fingerprint_hex": hex_encode(&p.certificate_fingerprint),
+                            "created_unix_ms": p.created_unix_ms,
+                            "last_seen_unix_ms": p.last_seen_unix_ms,
+                            "auto_accept": p.auto_accept,
+                        })
+                    })
+                    .collect();
+                json!({"ok": true, "peers": list})
+            }
+            "clear_trusted_peers" => {
+                let count = engine
+                    .core
+                    .clear_trusted_peers()
+                    .map_err(|error| error.to_string())?;
+                json!({"ok": true, "count": count})
             }
             "list_history_files" => {
                 let files = engine
@@ -310,6 +338,14 @@ pub unsafe extern "C" fn transassist_invoke(request: *const c_char) -> *mut c_ch
     })
 }
 
+fn hex_encode(bytes: &[u8]) -> String {
+    let mut s = String::with_capacity(bytes.len() * 2);
+    for &b in bytes {
+        s.push_str(&format!("{:02x}", b));
+    }
+    s
+}
+
 /// Returns the next serialized core event, or null when the queue is empty.
 #[unsafe(no_mangle)]
 pub extern "C" fn transassist_poll_event() -> *mut c_char {
@@ -334,6 +370,20 @@ pub unsafe extern "C" fn transassist_free_string(value: *mut c_char) {
         // SAFETY: The caller contract requires a pointer returned by CString::into_raw here.
         unsafe { drop(CString::from_raw(value)) };
     }
+}
+
+/// Shuts down the process-wide transfer core immediately.
+#[unsafe(no_mangle)]
+pub extern "C" fn transassist_shutdown() -> *mut c_char {
+    ffi_boundary(|| {
+        let mut slot = engine_slot()
+            .lock()
+            .map_err(|_| "FFI 核心锁已损坏".to_owned())?;
+        if let Some(engine) = slot.take() {
+            let _ = engine.core.shutdown();
+        }
+        Ok(json!({"ok": true}))
+    })
 }
 
 fn engine_slot() -> &'static Mutex<Option<FfiEngine>> {

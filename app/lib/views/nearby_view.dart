@@ -164,10 +164,6 @@ class _ChatDeviceListView extends StatelessWidget {
             ),
             const SizedBox(height: 14),
 
-            // 顶部 Hero 卡片（品牌渐变背景 + 6px 水平微动效双向箭头）
-            _NearbyHeroCard(controller: controller),
-            const SizedBox(height: 18),
-
             if (controller.sharedTextPayload != null ||
                 controller.sharedFileSources != null) ...[
               _ShareDraftBanner(controller: controller),
@@ -179,7 +175,7 @@ class _ChatDeviceListView extends StatelessWidget {
               EmptyState(
                 title: '正在扫描局域网设备...',
                 description:
-                    '请确保收发两端连接到同一个 Wi-Fi 或局域网，并均已启动「传输助手」。在没有局域网的环境下，可点击右上角开启「离线热点/AP 模式」。',
+                    '请确保收发两端连接到同一个 Wi-Fi 或局域网，并均已启动「互传」。在没有局域网的环境下，可点击右上角开启「离线热点/AP 模式」。',
                 action: FilledButton.icon(
                   onPressed: controller.refreshPeers,
                   icon: const Icon(LucideIcons.refreshCw, size: 16),
@@ -358,117 +354,6 @@ class _ChatDeviceListView extends StatelessWidget {
               }),
           ],
         ),
-      ),
-    );
-  }
-}
-
-/// 顶部 Hero 卡片（规范规格：两端即达 · 一键互传 + 说明 + CTA + 6px 水平微动效大双向箭头）
-class _NearbyHeroCard extends StatelessWidget {
-  const _NearbyHeroCard({required this.controller});
-
-  final AppController controller;
-
-  @override
-  Widget build(BuildContext context) {
-    return Container(
-      decoration: BoxDecoration(
-        borderRadius: BorderRadius.circular(20),
-        gradient: const LinearGradient(
-          colors: [AppTheme.brand400, AppTheme.brand600],
-          begin: Alignment.topLeft,
-          end: Alignment.bottomRight,
-        ),
-        boxShadow: const [
-          BoxShadow(
-            color: Color(0x400ea5e9),
-            blurRadius: 20,
-            offset: Offset(0, 6),
-          ),
-        ],
-      ),
-      clipBehavior: Clip.antiAlias,
-      child: Stack(
-        children: [
-          // 右侧背景装饰动效图形（IgnorePointer 彻底杜绝遮挡任何点击事件）
-          const Positioned(
-            right: -12,
-            bottom: -12,
-            child: IgnorePointer(
-              child: Opacity(
-                opacity: 0.18,
-                child: BrandHeroGraphic(size: 110),
-              ),
-            ),
-          ),
-          // 卡片主要交互与文本内容区（独占 100% 宽度，排版规整舒展）
-          Padding(
-            padding: const EdgeInsets.all(20),
-            child: Column(
-              crossAxisAlignment: CrossAxisAlignment.start,
-              mainAxisSize: MainAxisSize.min,
-              children: [
-                const Text(
-                  '两端即达 · 一键互传',
-                  style: TextStyle(
-                    fontSize: 18,
-                    fontWeight: FontWeight.w800,
-                    color: Colors.white,
-                    letterSpacing: -0.3,
-                  ),
-                ),
-                const SizedBox(height: 5),
-                Text(
-                  '基于局域网 TLS 1.3 双向加密与 4 路多通道并发引擎，无需外网流量即可全速互传。',
-                  style: TextStyle(
-                    fontSize: 12,
-                    color: Colors.white.withValues(alpha: 0.92),
-                    height: 1.45,
-                  ),
-                ),
-                const SizedBox(height: 16),
-                // 两个并排完整体积触控按钮（平分宽度，全域可点）
-                Row(
-                  children: [
-                    Expanded(
-                      child: FilledButton.icon(
-                        onPressed: () => _showHotspotGuide(context, controller),
-                        icon: const Icon(LucideIcons.wifi, size: 15),
-                        label: const Text('离线热点向导'),
-                        style: FilledButton.styleFrom(
-                          backgroundColor: Colors.white,
-                          foregroundColor: AppTheme.brand700,
-                          minimumSize: const Size(0, 42),
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                          elevation: 0,
-                        ),
-                      ),
-                    ),
-                    const SizedBox(width: 10),
-                    Expanded(
-                      child: OutlinedButton.icon(
-                        onPressed: () => _showManualConnect(context, controller),
-                        icon: const Icon(LucideIcons.plus, size: 15),
-                        label: const Text('IP 直连'),
-                        style: OutlinedButton.styleFrom(
-                          foregroundColor: Colors.white,
-                          backgroundColor: Colors.white.withValues(alpha: 0.12),
-                          side: BorderSide(color: Colors.white.withValues(alpha: 0.65), width: 1.2),
-                          minimumSize: const Size(0, 42),
-                          padding: const EdgeInsets.symmetric(horizontal: 10),
-                          textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
-                          shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
-                        ),
-                      ),
-                    ),
-                  ],
-                ),
-              ],
-            ),
-          ),
-        ],
       ),
     );
   }
@@ -818,7 +703,7 @@ Future<void> _showHotspotGuide(BuildContext context, AppController controller) a
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    '1. 手机打开「个人热点」（可关闭移动蜂窝数据，不消耗流量）；\n2. 电脑 Wi-Fi 搜索并连接该热点；\n3. 双方打开《传输助手》，即可秒级自动发现并满速互传。',
+                    '1. 手机打开「个人热点」（可关闭移动蜂窝数据，不消耗流量）；\n2. 电脑 Wi-Fi 搜索并连接该热点；\n3. 双方打开《互传》，即可秒级自动发现并满速互传。',
                     style: TextStyle(fontSize: 12, height: 1.45),
                   ),
                 ],
@@ -851,7 +736,7 @@ Future<void> _showHotspotGuide(BuildContext context, AppController controller) a
                   ),
                   const SizedBox(height: 6),
                   const Text(
-                    '1. Windows 点击任务栏右下角网络图标，开启「移动热点」；\n2. 手机 Wi-Fi 连接电脑热点；\n3. 打开《传输助手》即刻互联。',
+                    '1. Windows 点击任务栏右下角网络图标，开启「移动热点」；\n2. 手机 Wi-Fi 连接电脑热点；\n3. 打开《互传》即刻互联。',
                     style: TextStyle(fontSize: 12, height: 1.45),
                   ),
                 ],

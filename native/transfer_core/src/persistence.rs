@@ -468,6 +468,40 @@ impl TransferRepository {
         Ok(())
     }
 
+    pub fn list_trusted_peers(&self) -> Result<Vec<TrustedPeer>, RepositoryError> {
+        let connection = self.lock()?;
+        let mut statement = connection.prepare(
+            "SELECT peer_id, display_name, certificate_fingerprint, created_unix_ms,
+                    last_seen_unix_ms, auto_accept
+             FROM trusted_peers ORDER BY last_seen_unix_ms DESC, created_unix_ms DESC",
+        )?;
+        let rows = statement.query_map([], |row| {
+            let fingerprint: Vec<u8> = row.get(2)?;
+            let certificate_fingerprint = fingerprint.try_into().map_err(|value: Vec<u8>| {
+                rusqlite::Error::FromSqlConversionFailure(
+                    2,
+                    Type::Blob,
+                    format!("invalid fingerprint length: {}", value.len()).into(),
+                )
+            })?;
+            Ok(TrustedPeer {
+                peer_id: row.get(0)?,
+                display_name: row.get(1)?,
+                certificate_fingerprint,
+                created_unix_ms: row.get(3)?,
+                last_seen_unix_ms: row.get(4)?,
+                auto_accept: row.get(5)?,
+            })
+        })?;
+        rows.collect::<Result<Vec<_>, _>>().map_err(Into::into)
+    }
+
+    pub fn clear_trusted_peers(&self) -> Result<usize, RepositoryError> {
+        let connection = self.lock()?;
+        let count = connection.execute("DELETE FROM trusted_peers", [])?;
+        Ok(count)
+    }
+
     pub fn remove_trusted_peer(&self, peer_id: &str) -> Result<bool, RepositoryError> {
         let connection = self.lock()?;
         let deleted =

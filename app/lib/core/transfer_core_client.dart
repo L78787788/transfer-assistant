@@ -27,6 +27,8 @@ abstract interface class TransferCoreClient {
   Future<void> updateSettings(AppSettings settings);
 
   Future<void> removeTrustedPeer(String peerId);
+  Future<List<TrustedPeerInfo>> listTrustedPeers();
+  Future<int> clearTrustedPeers();
 
   Future<List<HistoryFileItem>> listHistoryFiles();
 

@@ -116,7 +116,7 @@ class MainActivity : FlutterActivity() {
                     result.success(null)
                 }
                 "showNotification" -> {
-                    val title = call.argument<String>("title") ?: "传输助手"
+                    val title = call.argument<String>("title") ?: "互传"
                     val body = call.argument<String>("body") ?: ""
                     TransferForegroundService.showTransferNotification(this, title, body)
                     result.success(null)
@@ -154,6 +154,23 @@ class MainActivity : FlutterActivity() {
                 }
                 "clearSharedPayload" -> {
                     sharedPayload = null
+                    result.success(null)
+                }
+                "checkNotificationPermission" -> {
+                    val enabled = androidx.core.app.NotificationManagerCompat.from(this).areNotificationsEnabled()
+                    result.success(enabled)
+                }
+                "requestNotificationPermission" -> {
+                    if (Build.VERSION.SDK_INT >= Build.VERSION_CODES.TIRAMISU) {
+                        if (checkSelfPermission(Manifest.permission.POST_NOTIFICATIONS) != PackageManager.PERMISSION_GRANTED) {
+                            requestPermissions(arrayOf(Manifest.permission.POST_NOTIFICATIONS), REQUEST_PERMISSIONS)
+                        }
+                    } else {
+                        val intent = Intent(android.provider.Settings.ACTION_APP_NOTIFICATION_SETTINGS).apply {
+                            putExtra(android.provider.Settings.EXTRA_APP_PACKAGE, packageName)
+                        }
+                        startActivity(intent)
+                    }
                     result.success(null)
                 }
                 else -> result.notImplemented()
@@ -370,7 +387,7 @@ class MainActivity : FlutterActivity() {
 
     private fun defaultReceiveDirectory(): File {
         val base = getExternalFilesDir(Environment.DIRECTORY_DOWNLOADS) ?: filesDir
-        return File(base, "传输助手").apply { mkdirs() }
+        return File(base, "互传").apply { mkdirs() }
     }
 
     private fun configuredReceiveDirectory(): String {

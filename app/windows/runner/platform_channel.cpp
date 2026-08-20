@@ -113,7 +113,7 @@ bool SetContextMenu(bool enable) {
   if (enable) {
     HKEY key;
     if (::RegCreateKeyExW(HKEY_CURRENT_USER, file_key, 0, nullptr, 0, KEY_WRITE, nullptr, &key, nullptr) == ERROR_SUCCESS) {
-      const wchar_t* title = L"使用传输助手发送";
+      const wchar_t* title = L"使用互传发送";
       ::RegSetValueExW(key, nullptr, 0, REG_SZ, reinterpret_cast<const BYTE*>(title), static_cast<DWORD>((wcslen(title) + 1) * sizeof(wchar_t)));
       ::RegSetValueExW(key, L"Icon", 0, REG_SZ, reinterpret_cast<const BYTE*>(exe_path), static_cast<DWORD>((wcslen(exe_path) + 1) * sizeof(wchar_t)));
       HKEY cmd_key;
@@ -124,7 +124,7 @@ bool SetContextMenu(bool enable) {
       ::RegCloseKey(key);
     }
     if (::RegCreateKeyExW(HKEY_CURRENT_USER, dir_key, 0, nullptr, 0, KEY_WRITE, nullptr, &key, nullptr) == ERROR_SUCCESS) {
-      const wchar_t* title = L"使用传输助手发送";
+      const wchar_t* title = L"使用互传发送";
       ::RegSetValueExW(key, nullptr, 0, REG_SZ, reinterpret_cast<const BYTE*>(title), static_cast<DWORD>((wcslen(title) + 1) * sizeof(wchar_t)));
       ::RegSetValueExW(key, L"Icon", 0, REG_SZ, reinterpret_cast<const BYTE*>(exe_path), static_cast<DWORD>((wcslen(exe_path) + 1) * sizeof(wchar_t)));
       HKEY cmd_key;
@@ -151,6 +151,26 @@ bool IsContextMenuEnabled() {
 }
 
 static std::unique_ptr<flutter::MethodChannel<EncodableValue>> g_platform_channel;
+static ComPtr<ITaskbarList3> g_taskbar_list;
+
+void UpdateTaskbarProgress(HWND window, int percent, bool active) {
+  if (!g_taskbar_list) {
+    if (FAILED(::CoCreateInstance(CLSID_TaskbarList, nullptr, CLSCTX_INPROC_SERVER,
+                                  IID_PPV_ARGS(&g_taskbar_list))) ||
+        FAILED(g_taskbar_list->HrInit())) {
+      g_taskbar_list = nullptr;
+      return;
+    }
+  }
+  if (g_taskbar_list) {
+    if (active && percent >= 0 && percent <= 100) {
+      g_taskbar_list->SetProgressState(window, TBPF_NORMAL);
+      g_taskbar_list->SetProgressValue(window, percent, 100);
+    } else {
+      g_taskbar_list->SetProgressState(window, TBPF_NOPROGRESS);
+    }
+  }
+}
 
 }  // namespace
 
@@ -170,8 +190,8 @@ void RegisterPlatformChannel(flutter::FlutterEngine* engine, HWND window,
           const flutter::MethodCall<EncodableValue>& call,
           std::unique_ptr<MethodResult> result) {
         if (call.method_name() == "paths") {
-          const std::string data = KnownFolder(FOLDERID_LocalAppData) + "\\传输助手";
-          const std::string receive = KnownFolder(FOLDERID_Downloads) + "\\传输助手";
+          const std::string data = KnownFolder(FOLDERID_LocalAppData) + "\\互传";
+          const std::string receive = KnownFolder(FOLDERID_Downloads) + "\\互传";
           result->Success(EncodableValue(EncodableMap{
               {EncodableValue("dataDirectory"), EncodableValue(data)},
               {EncodableValue("receiveDirectory"), EncodableValue(receive)},
@@ -233,7 +253,7 @@ void RegisterPlatformChannel(flutter::FlutterEngine* engine, HWND window,
           result->Success();
         } else if (call.method_name() == "updateNotificationProgress") {
           const auto* args = std::get_if<EncodableMap>(call.arguments());
-          if (args != nullptr && update_tray_status) {
+          if (args != nullptr) {
             std::string title = "文件";
             std::string speed = "0 B/s";
             int percent = 0;
@@ -256,11 +276,15 @@ void RegisterPlatformChannel(flutter::FlutterEngine* engine, HWND window,
               active = std::get<bool>(active_it->second);
             }
 
-            if (active) {
-              std::string status = "传输助手 · 传输中 " + std::to_string(percent) + "% (" + speed + ")";
-              update_tray_status(status);
-            } else {
-              update_tray_status("传输助手");
+            UpdateTaskbarProgress(window, percent, active);
+
+            if (update_tray_status) {
+              if (active) {
+                std::string status = "互传 · 传输中 " + std::to_string(percent) + "% (" + speed + ")";
+                update_tray_status(status);
+              } else {
+                update_tray_status("互传");
+              }
             }
           }
           result->Success();

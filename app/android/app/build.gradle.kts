@@ -31,7 +31,7 @@ android {
     }
 
     defaultConfig {
-        applicationId = "com.transassist.app"
+        applicationId = "com.transassist.gemini"
         minSdk = 28
         targetSdk = flutter.targetSdkVersion
         versionCode = flutter.versionCode

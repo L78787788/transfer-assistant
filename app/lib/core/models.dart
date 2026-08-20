@@ -384,3 +384,33 @@ class SharedPayload {
     );
   }
 }
+
+class TrustedPeerInfo {
+  const TrustedPeerInfo({
+    required this.peerId,
+    required this.displayName,
+    required this.fingerprintHex,
+    required this.createdUnixMs,
+    required this.lastSeenUnixMs,
+    required this.autoAccept,
+  });
+
+  final String peerId;
+  final String displayName;
+  final String fingerprintHex;
+  final int createdUnixMs;
+  final int lastSeenUnixMs;
+  final bool autoAccept;
+
+  DateTime get createdAt => DateTime.fromMillisecondsSinceEpoch(createdUnixMs);
+  DateTime get lastSeenAt => DateTime.fromMillisecondsSinceEpoch(lastSeenUnixMs);
+
+  factory TrustedPeerInfo.fromJson(Map<String, Object?> json) => TrustedPeerInfo(
+    peerId: json['peer_id']! as String,
+    displayName: json['display_name']! as String,
+    fingerprintHex: json['fingerprint_hex']! as String,
+    createdUnixMs: (json['created_unix_ms'] as num).toInt(),
+    lastSeenUnixMs: (json['last_seen_unix_ms'] as num).toInt(),
+    autoAccept: json['auto_accept'] == true || json['auto_accept'] == 1,
+  );
+}

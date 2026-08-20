@@ -79,6 +79,15 @@ if (-not $env:PUB_HOSTED_URL) {
 $workspaceCopy = New-AsciiWorkspaceCopy -SourceDir $targetRepoRoot
 $appRoot = Join-Path $workspaceCopy.Root 'app'
 
+$keyProps = Join-Path $targetRepoRoot 'app\android\key.properties'
+$keyStore = Join-Path $targetRepoRoot 'app\android\transassist-release.jks'
+if (Test-Path -LiteralPath $keyProps) {
+    Copy-Item -LiteralPath $keyProps -Destination (Join-Path $workspaceCopy.Root 'app\android\key.properties') -Force
+}
+if (Test-Path -LiteralPath $keyStore) {
+    Copy-Item -LiteralPath $keyStore -Destination (Join-Path $workspaceCopy.Root 'app\android\transassist-release.jks') -Force
+}
+
 if (-not $SkipChecks) {
     Push-Location $targetRepoRoot
     try {

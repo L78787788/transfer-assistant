@@ -40,9 +40,9 @@ class PlatformBridge {
     final home = Platform.environment['USERPROFILE'] ?? Directory.current.path;
     final local = Platform.environment['LOCALAPPDATA'] ?? home;
     return PlatformPaths(
-      dataDirectory: '$local${Platform.pathSeparator}传输助手',
+      dataDirectory: '$local${Platform.pathSeparator}互传',
       receiveDirectory:
-          '$home${Platform.pathSeparator}Downloads${Platform.pathSeparator}传输助手',
+          '$home${Platform.pathSeparator}Downloads${Platform.pathSeparator}互传',
     );
   }
 
@@ -223,8 +223,28 @@ class PlatformBridge {
     await Clipboard.setData(ClipboardData(text: text));
   }
 
-  Future<String?> readClipboard() async {
-    final data = await Clipboard.getData(Clipboard.kTextPlain);
-    return data?.text;
+  Future<bool> checkNotificationPermission() async {
+    try {
+      final res = await _channel.invokeMethod<bool>('checkNotificationPermission');
+      return res ?? true;
+    } catch (_) {
+      return true;
+    }
+  }
+
+  Future<void> requestNotificationPermission() async {
+    try {
+      await _channel.invokeMethod<void>('requestNotificationPermission');
+    } catch (_) {}
+  }
+
+  Future<void> openUrl(String url) async {
+    if (Platform.isWindows) {
+      await Process.run('cmd', ['/c', 'start', '', url], runInShell: true);
+      return;
+    }
+    try {
+      await _channel.invokeMethod<void>('openFile', {'path': url});
+    } catch (_) {}
   }
 }

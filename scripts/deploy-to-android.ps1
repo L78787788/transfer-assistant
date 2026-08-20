@@ -7,8 +7,9 @@ $ErrorActionPreference = 'Stop'
 $repoRoot = Split-Path -Parent $PSScriptRoot
 $copyRoot = 'E:\ta-build'
 
-Write-Host ">>> 1. Ensuring Android signing files..."
+Write-Host ">>> 1. Ensuring Android signing files and Rust core..."
 & (Join-Path $PSScriptRoot 'ensure-android-signing.ps1')
+& (Join-Path $PSScriptRoot 'build-android-rust-core.ps1')
 
 Write-Host ">>> 2. Syncing repo to ASCII workspace: $copyRoot..."
 $excluded = @(
@@ -60,28 +61,35 @@ $apkDist = Join-Path $dist 'transfer-assistant-1.0.0-android-arm64.apk'
 Copy-Item -LiteralPath $apkPath -Destination $apkDist -Force
 Write-Host ">>> 5. Release APK generated: $apkDist"
 
-$geminiFolder = 'D:\草稿箱\Gemini\传输助手Gemini'
-if (Test-Path -LiteralPath $geminiFolder) {
-    Copy-Item -LiteralPath $apkDist -Destination (Join-Path $geminiFolder 'transfer-assistant-1.0.0-android-arm64.apk') -Force
-    Write-Host ">>> 6. Copied APK to Gemini folder: $geminiFolder"
+$draftFolders = @('D:\草稿箱\Gemini\传输助手', 'D:\草稿箱\Gemini\传输助手Gemini')
+foreach ($folder in $draftFolders) {
+    if (Test-Path -LiteralPath $folder) {
+        Copy-Item -LiteralPath $apkDist -Destination (Join-Path $folder 'transfer-assistant-1.0.0-android-arm64.apk') -Force
+        Write-Host ">>> 6. Copied APK to folder: $folder"
+    }
 }
 
-$adb = Get-Command adb.exe -ErrorAction SilentlyContinue
-if ($adb) {
-    $devices = & adb.exe devices | Select-String -Pattern 'device$'
+$adbExe = (Get-Command adb.exe -ErrorAction SilentlyContinue).Source
+if (-not $adbExe) {
+    $fallbackAdb = Join-Path $AndroidSdk 'platform-tools\adb.exe'
+    if (Test-Path -LiteralPath $fallbackAdb) {
+        $adbExe = $fallbackAdb
+    }
+}
+
+if ($adbExe) {
+    $devices = & $adbExe devices | Select-String -Pattern 'device$'
     if ($devices) {
-        Write-Host ">>> 7. Detected Android device, reinstalling cleanly..."
-        & adb.exe uninstall com.transassist.transfer_assistant | Out-Null
-        & adb.exe uninstall com.transassist.app | Out-Null
-        & adb.exe install -r -d $apkPath
+        Write-Host ">>> 7. Detected Android device, installing APK..."
+        & $adbExe install -r -d $apkPath
         if ($LASTEXITCODE -eq 0) {
             Write-Host ">>> 8. Launching App on Android device..."
-            & adb.exe shell am start -n com.transassist.app/com.transassist.transfer_assistant.MainActivity | Out-Null
+            & $adbExe shell am start -n com.transassist.gemini/com.transassist.transfer_assistant.MainActivity | Out-Null
             Write-Host ">>> Successfully deployed and updated on mobile device!"
         }
     } else {
         Write-Host ">>> (No online Android device detected via ADB, APK packaging complete.)"
     }
 } else {
-    Write-Host ">>> (ADB not in PATH, APK packaging complete.)"
+    Write-Host ">>> (ADB not found, APK packaging complete.)"
 }

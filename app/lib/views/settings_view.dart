@@ -2,7 +2,6 @@ import 'dart:io';
 import 'package:flutter/material.dart';
 import 'package:lucide_icons_flutter/lucide_icons.dart';
 
-import '../core/models.dart';
 import '../state/app_controller.dart';
 import '../widgets/common.dart';
 
@@ -48,8 +47,7 @@ class _SettingsViewState extends State<SettingsView> {
           padding: const EdgeInsets.symmetric(horizontal: 20, vertical: 0),
           children: [
             PageHeader(title: '设置'),
-            _BrandAboutCard(),
-            const SizedBox(height: 16),
+            const SizedBox(height: 8),
 
             _SectionHeader(title: '外观与主题', icon: LucideIcons.palette),
             const SizedBox(height: 8),
@@ -266,7 +264,7 @@ class _SettingsViewState extends State<SettingsView> {
                             ),
                           ),
                           title: const Text('Windows 资源管理器右键菜单'),
-                          subtitle: const Text('在文件或文件夹右键菜单中增加「使用传输助手发送」'),
+                          subtitle: const Text('在文件或文件夹右键菜单中增加「使用互传发送」'),
                           value: isEnabled,
                           onChanged: (value) async {
                             await widget.controller.platform
@@ -280,44 +278,122 @@ class _SettingsViewState extends State<SettingsView> {
                       },
                     ),
                   ],
+                  if (Platform.isAndroid && !widget.controller.isNotificationPermissionGranted) ...[
+                    const Divider(),
+                    Container(
+                      padding: const EdgeInsets.all(12),
+                      decoration: BoxDecoration(
+                        color: colors.errorContainer.withValues(alpha: 0.5),
+                        borderRadius: BorderRadius.circular(12),
+                        border: Border.all(color: colors.error.withValues(alpha: 0.3)),
+                      ),
+                      child: Row(
+                        children: [
+                          Icon(LucideIcons.bellOff, color: colors.error, size: 20),
+                          const SizedBox(width: 10),
+                          Expanded(
+                            child: Column(
+                              crossAxisAlignment: CrossAxisAlignment.start,
+                              children: [
+                                const Text(
+                                  '通知权限未开启',
+                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                                ),
+                                Text(
+                                  '开启通知后可在后台实时查看传输进度与接收弹窗提醒',
+                                  style: TextStyle(fontSize: 11, color: colors.onErrorContainer),
+                                ),
+                              ],
+                            ),
+                          ),
+                          FilledButton.tonal(
+                            onPressed: () => widget.controller.requestNotificationPermission(),
+                            style: FilledButton.styleFrom(
+                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              textStyle: const TextStyle(fontSize: 12),
+                            ),
+                            child: const Text('去开启'),
+                          ),
+                        ],
+                      ),
+                    ),
+                  ],
                 ],
               ),
             ),
             const SizedBox(height: 20),
 
-            _SectionHeader(title: '已信任设备', icon: LucideIcons.users),
+            Row(
+              mainAxisAlignment: MainAxisAlignment.spaceBetween,
+              children: [
+                _SectionHeader(title: '已信任设备 (${widget.controller.trustedPeers.length})', icon: LucideIcons.shieldCheck),
+                if (widget.controller.trustedPeers.isNotEmpty)
+                  TextButton.icon(
+                    onPressed: () async {
+                      final confirm = await showDialog<bool>(
+                        context: context,
+                        builder: (ctx) => AlertDialog(
+                          title: const Text('清空可信设备'),
+                          content: const Text('确定要清空所有已信任的设备绑定吗？清空后来自这些设备的传输将重新弹窗确认。'),
+                          actions: [
+                            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+                            FilledButton(
+                              style: FilledButton.styleFrom(backgroundColor: colors.error),
+                              onPressed: () => Navigator.pop(ctx, true),
+                              child: const Text('确认清空'),
+                            ),
+                          ],
+                        ),
+                      );
+                      if (confirm == true) {
+                        await widget.controller.clearTrustedPeers();
+                      }
+                    },
+                    icon: const Icon(LucideIcons.trash2, size: 14, color: Colors.redAccent),
+                    label: const Text('清空全部', style: TextStyle(fontSize: 12, color: Colors.redAccent)),
+                  ),
+              ],
+            ),
             const SizedBox(height: 8),
             GlassCard(
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  ...widget.controller.peers
-                      .where((peer) => peer.trusted)
-                      .map(
-                        (peer) => ListTile(
-                          contentPadding: EdgeInsets.zero,
-                          leading: Icon(
-                            peer.deviceKind == DeviceKind.phone
-                                ? LucideIcons.smartphone
-                                : LucideIcons.monitor,
-                            color: colors.primary,
+                  ...widget.controller.trustedPeers.map(
+                    (peer) {
+                      final fpShort = peer.fingerprintHex.length > 16
+                          ? '${peer.fingerprintHex.substring(0, 8)}...${peer.fingerprintHex.substring(peer.fingerprintHex.length - 8)}'
+                          : peer.fingerprintHex;
+                      return ListTile(
+                        contentPadding: EdgeInsets.zero,
+                        leading: Container(
+                          padding: const EdgeInsets.all(8),
+                          decoration: BoxDecoration(
+                            color: colors.primary.withValues(alpha: 0.1),
+                            borderRadius: BorderRadius.circular(8),
                           ),
-                          title: Text(peer.name),
-                          subtitle: Text(peer.address),
-                          trailing: IconButton(
-                            onPressed: () =>
-                                widget.controller.removeTrustedPeer(peer.id),
-                            tooltip: '取消信任',
-                            icon: const Icon(LucideIcons.trash2, size: 18),
-                          ),
+                          child: Icon(LucideIcons.shieldCheck, color: colors.primary, size: 20),
                         ),
-                      ),
-                  if (widget.controller.peers.where((p) => p.trusted).isEmpty)
+                        title: Text(peer.displayName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
+                        subtitle: Text(
+                          '指纹: $fpShort\n首次添加: ${_formatDate(peer.createdAt)}',
+                          style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
+                        ),
+                        isThreeLine: true,
+                        trailing: IconButton(
+                          onPressed: () => widget.controller.removeTrustedPeer(peer.peerId),
+                          tooltip: '取消信任',
+                          icon: const Icon(LucideIcons.userMinus, size: 18, color: Colors.redAccent),
+                        ),
+                      );
+                    },
+                  ),
+                  if (widget.controller.trustedPeers.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       child: Center(
                         child: Text(
-                          '暂无可信设备（在接收弹窗中勾选“记住”即可添加）',
+                          '暂无可信设备（在接收文件弹窗中勾选“记住此设备”即可自动信任）',
                           style: TextStyle(
                             color: colors.onSurfaceVariant,
                             fontSize: 12,
@@ -333,6 +409,10 @@ class _SettingsViewState extends State<SettingsView> {
         ),
       ),
     );
+  }
+
+  String _formatDate(DateTime dt) {
+    return '${dt.year}-${dt.month.toString().padLeft(2, '0')}-${dt.day.toString().padLeft(2, '0')} ${dt.hour.toString().padLeft(2, '0')}:${dt.minute.toString().padLeft(2, '0')}';
   }
 
   bool _isAppPrivateDirectory(String path) {
@@ -364,67 +444,6 @@ class _SectionHeader extends StatelessWidget {
               ),
         ),
       ],
-    );
-  }
-}
-
-class _BrandAboutCard extends StatelessWidget {
-  @override
-  Widget build(BuildContext context) {
-    final colors = Theme.of(context).colorScheme;
-
-    return GlassCard(
-      padding: const EdgeInsets.all(20),
-      borderRadius: 18,
-      child: Column(
-        crossAxisAlignment: CrossAxisAlignment.start,
-        children: [
-          Row(
-            children: [
-              const BrandDualArrowIcon(
-                size: 26,
-                withBackground: true,
-                borderRadius: 14,
-              ),
-              const SizedBox(width: 16),
-              Expanded(
-                child: Column(
-                  crossAxisAlignment: CrossAxisAlignment.start,
-                  children: [
-                    Text(
-                      '传输助手 Gemini',
-                      style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.3,
-                          ),
-                    ),
-                    const SizedBox(height: 3),
-                    Text(
-                      'v1.0.0 · 局域网极速跨端原生互传',
-                      style: TextStyle(
-                        fontSize: 12,
-                        fontWeight: FontWeight.w500,
-                        color: colors.onSurfaceVariant,
-                      ),
-                    ),
-                  ],
-                ),
-              ),
-            ],
-          ),
-          const SizedBox(height: 14),
-          const Divider(height: 1),
-          const SizedBox(height: 12),
-          Text(
-            '技术架构：Flutter + Rust 核心 · mDNS 局域网无感发现 · TLS 1.3 双向加密 · 6 位安全配对码 · 4 路并行通道 · BLAKE3 哈希校验 · 断点续传',
-            style: TextStyle(
-              fontSize: 11,
-              height: 1.45,
-              color: colors.onSurfaceVariant,
-            ),
-          ),
-        ],
-      ),
     );
   }
 }

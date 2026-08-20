@@ -131,6 +131,20 @@ class NativeTransferCoreClient implements TransferCoreClient {
       _command('remove_trusted_peer', {'peer_id': peerId});
 
   @override
+  Future<List<TrustedPeerInfo>> listTrustedPeers() async {
+    final response = _call(_invoke!, {'command': 'list_trusted_peers'});
+    final list = (response['peers'] as List<Object?>? ?? const [])
+        .cast<Map<String, Object?>>();
+    return list.map(TrustedPeerInfo.fromJson).toList(growable: false);
+  }
+
+  @override
+  Future<int> clearTrustedPeers() async {
+    final response = _call(_invoke!, {'command': 'clear_trusted_peers'});
+    return (response['count'] as num?)?.toInt() ?? 0;
+  }
+
+  @override
   Future<List<HistoryFileItem>> listHistoryFiles() async {
     final response = _call(_invoke!, {'command': 'list_history_files'});
     final list = (response['files'] as List<Object?>? ?? const [])
