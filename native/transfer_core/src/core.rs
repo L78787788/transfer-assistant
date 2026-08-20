@@ -1398,26 +1398,27 @@ mod tests {
             )
             .expect("send transfer");
 
-        // Allow transfer to start then cancel.
-        thread::sleep(Duration::from_millis(100));
+        // 等待接收端收到 offer 并进入传输中状态后再执行取消。
+        let deadline = Instant::now() + Duration::from_secs(15);
+        while Instant::now() < deadline {
+            pump_and_accept(&[&sender, &receiver]);
+            if receiver
+                .transfers()
+                .into_iter()
+                .any(|t| t.id == transfer_id && t.state == TransferState::Transferring)
+            {
+                break;
+            }
+            thread::sleep(Duration::from_millis(10));
+        }
+
         receiver
             .command_transfer(transfer_id, crate::model::TransferCommand::Cancel)
             .expect("cancel incoming");
 
         let deadline = Instant::now() + Duration::from_secs(10);
         while Instant::now() < deadline {
-            for core in [&sender, &receiver] {
-                while let Some(event) = core.next_event() {
-                    if let CoreEvent::IncomingOffer { offer } = event {
-                        core.answer_offer(
-                            uuid::Uuid::parse_str(&offer.id).expect("offer id"),
-                            true,
-                            true,
-                        )
-                        .expect("accept");
-                    }
-                }
-            }
+            pump_and_accept(&[&sender, &receiver]);
             if receiver
                 .transfers()
                 .iter()
