@@ -427,7 +427,25 @@ where
                     if context.remaining_chunks.load(Ordering::Acquire) == 0 {
                         break;
                     }
+                    if context.control.is_cancelled() || inner.transfer_is_cancelled(transfer_id) {
+                        return Err(LanError::Cancelled);
+                    }
                     if context.active_channels.load(Ordering::Acquire) == 0 {
+                        tokio::select! {
+                            envelope_res = read_envelope(tls) => {
+                                if let Ok(envelope) = envelope_res
+                                    && let Some(wire::envelope::Payload::Control(action)) = envelope.payload
+                                    && let Ok(wire::ControlAction::Cancel) = wire::ControlAction::try_from(action.action)
+                                {
+                                    inner.cancel_from_remote(transfer_id, "对方已取消传输")?;
+                                    return Err(LanError::RemoteCancelled("对方已取消传输".to_owned()));
+                                }
+                            }
+                            _ = tokio::time::sleep(tokio::time::Duration::from_millis(50)) => {}
+                        }
+                        if context.control.is_cancelled() || inner.transfer_is_cancelled(transfer_id) {
+                            return Err(LanError::Cancelled);
+                        }
                         return Err(LanError::IncompleteTransfer("数据通道已中断".to_owned()));
                     }
                 }

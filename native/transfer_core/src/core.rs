@@ -2145,11 +2145,15 @@ mod tests {
         let deadline = Instant::now() + Duration::from_secs(15);
         while Instant::now() < deadline {
             pump_and_accept(&[&sender, &receiver]);
-            if sender
+            let sender_ready = sender
                 .transfers()
                 .into_iter()
-                .any(|t| t.id == transfer_id && t.state == TransferState::Transferring)
-            {
+                .any(|t| t.id == transfer_id && t.state == TransferState::Transferring);
+            let receiver_ready = receiver
+                .transfers()
+                .into_iter()
+                .any(|t| t.id == transfer_id && t.state == TransferState::Transferring);
+            if sender_ready && receiver_ready {
                 break;
             }
             thread::sleep(Duration::from_millis(10));
