@@ -66,6 +66,7 @@ $flutterTool = Resolve-Flutter
 $iscc = Resolve-Iscc
 & (Join-Path $PSScriptRoot 'check-environment.ps1') -Flutter $flutterTool -RequireInstaller
 & (Join-Path $PSScriptRoot 'ensure-android-signing.ps1')
+& (Join-Path $PSScriptRoot 'build-android-rust-core.ps1')
 
 $env:ANDROID_HOME = $(if ($env:ANDROID_HOME) { $env:ANDROID_HOME } else { 'E:\Android\Sdk' })
 $env:ANDROID_SDK_ROOT = $env:ANDROID_HOME
@@ -151,10 +152,12 @@ New-Item -ItemType Directory -Force -Path $localReleaseDir | Out-Null
 $buildReleaseDir = Join-Path $workspaceCopy.Root 'app\build\windows\x64\runner\Release'
 Copy-Item -Path "$buildReleaseDir\*" -Destination $localReleaseDir -Recurse -Force
 
-$geminiDraftDir = 'D:\草稿箱\Gemini\传输助手Gemini'
-if (Test-Path -Path $geminiDraftDir) {
-    Copy-Item -LiteralPath $apkTarget -Destination $geminiDraftDir -Force
-    Copy-Item -LiteralPath (Join-Path $targetDist "transfer-assistant-$Version-windows-x64-setup.exe") -Destination $geminiDraftDir -Force
+$draftDirs = @('D:\草稿箱\Gemini\传输助手', 'D:\草稿箱\Gemini\传输助手Gemini')
+foreach ($draftDir in $draftDirs) {
+    if (Test-Path -Path $draftDir) {
+        Copy-Item -LiteralPath $apkTarget -Destination $draftDir -Force
+        Copy-Item -LiteralPath (Join-Path $targetDist "transfer-assistant-$Version-windows-x64-setup.exe") -Destination $draftDir -Force
+    }
 }
 
 $artifacts = Get-ChildItem -Path $targetDist -File |
