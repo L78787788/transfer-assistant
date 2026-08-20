@@ -434,8 +434,8 @@ where
                         tokio::select! {
                             envelope_res = read_envelope(tls) => {
                                 if let Ok(envelope) = envelope_res
-                                    && let Some(wire::envelope::Payload::Control(action)) = envelope.payload
-                                    && let Ok(wire::ControlAction::Cancel) = wire::ControlAction::try_from(action.action)
+                                    && let Some(wire::envelope::Payload::TransferControl(ctrl)) = envelope.payload
+                                    && let Ok(wire::ControlAction::Cancel) = wire::ControlAction::try_from(ctrl.action)
                                 {
                                     inner.cancel_from_remote(transfer_id, "对方已取消传输")?;
                                     return Err(LanError::RemoteCancelled("对方已取消传输".to_owned()));
