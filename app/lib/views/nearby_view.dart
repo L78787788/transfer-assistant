@@ -88,18 +88,25 @@ class _ChatDeviceListView extends StatelessWidget {
                 Text(
                   '传输会话',
                   style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.5,
-                      ),
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.5,
+                  ),
                 ),
                 const SizedBox(width: 10),
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 10,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
-                    color: colors.primary.withValues(alpha: isDark ? 0.20 : 0.12),
+                    color: colors.primary.withValues(
+                      alpha: isDark ? 0.20 : 0.12,
+                    ),
                     borderRadius: BorderRadius.circular(999),
                     border: Border.all(
-                      color: colors.primary.withValues(alpha: isDark ? 0.35 : 0.25),
+                      color: colors.primary.withValues(
+                        alpha: isDark ? 0.35 : 0.25,
+                      ),
                     ),
                   ),
                   child: Row(
@@ -132,7 +139,9 @@ class _ChatDeviceListView extends StatelessWidget {
                   icon: const Icon(LucideIcons.wifi, size: 18),
                   style: IconButton.styleFrom(
                     minimumSize: const Size(40, 40),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
@@ -142,16 +151,22 @@ class _ChatDeviceListView extends StatelessWidget {
                   icon: const Icon(LucideIcons.plus, size: 18),
                   style: IconButton.styleFrom(
                     minimumSize: const Size(40, 40),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                 ),
                 const SizedBox(width: 8),
                 IconButton.filledTonal(
-                  onPressed: controller.isRefreshing ? null : controller.refreshPeers,
+                  onPressed: controller.isRefreshing
+                      ? null
+                      : controller.refreshPeers,
                   tooltip: '刷新设备列表',
                   style: IconButton.styleFrom(
                     minimumSize: const Size(40, 40),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(12)),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(12),
+                    ),
                   ),
                   icon: controller.isRefreshing
                       ? const SizedBox.square(
@@ -187,8 +202,9 @@ class _ChatDeviceListView extends StatelessWidget {
                 final peerTransfers = controller.transfers
                     .where((t) => t.peerName == peer.name)
                     .toList(growable: false);
-                final latestTransfer =
-                    peerTransfers.isNotEmpty ? peerTransfers.first : null;
+                final latestTransfer = peerTransfers.isNotEmpty
+                    ? peerTransfers.first
+                    : null;
                 final isPhone = peer.deviceKind == DeviceKind.phone;
 
                 return Container(
@@ -205,13 +221,19 @@ class _ChatDeviceListView extends StatelessWidget {
                           borderRadius: BorderRadius.circular(16),
                           border: Border.all(
                             color: peer.trusted
-                                ? colors.primary.withValues(alpha: isDark ? 0.4 : 0.3)
-                                : (isDark ? const Color(0xff1e2a44) : const Color(0xffe2e8f0)),
+                                ? colors.primary.withValues(
+                                    alpha: isDark ? 0.4 : 0.3,
+                                  )
+                                : (isDark
+                                      ? const Color(0xff1e2a44)
+                                      : const Color(0xffe2e8f0)),
                             width: peer.trusted ? 1.5 : 1,
                           ),
                           boxShadow: [
                             BoxShadow(
-                              color: Colors.black.withValues(alpha: isDark ? 0.2 : 0.04),
+                              color: Colors.black.withValues(
+                                alpha: isDark ? 0.2 : 0.04,
+                              ),
                               blurRadius: 10,
                               offset: const Offset(0, 2),
                             ),
@@ -227,9 +249,13 @@ class _ChatDeviceListView extends StatelessWidget {
                                   height: 48,
                                   decoration: BoxDecoration(
                                     shape: BoxShape.circle,
-                                    color: colors.primary.withValues(alpha: 0.12),
+                                    color: colors.primary.withValues(
+                                      alpha: 0.12,
+                                    ),
                                     border: Border.all(
-                                      color: colors.primary.withValues(alpha: 0.3),
+                                      color: colors.primary.withValues(
+                                        alpha: 0.3,
+                                      ),
                                       width: 1.5,
                                     ),
                                   ),
@@ -285,10 +311,12 @@ class _ChatDeviceListView extends StatelessWidget {
                                             vertical: 2,
                                           ),
                                           decoration: BoxDecoration(
-                                            color: colors.primary
-                                                .withValues(alpha: isDark ? 0.2 : 0.12),
-                                            borderRadius:
-                                                BorderRadius.circular(6),
+                                            color: colors.primary.withValues(
+                                              alpha: isDark ? 0.2 : 0.12,
+                                            ),
+                                            borderRadius: BorderRadius.circular(
+                                              6,
+                                            ),
                                           ),
                                           child: Text(
                                             '已信任',
@@ -332,7 +360,10 @@ class _ChatDeviceListView extends StatelessWidget {
                             // 进入传输会话按钮
                             FilledButton.tonalIcon(
                               onPressed: () => onSelectPeer(peer),
-                              icon: const Icon(LucideIcons.arrowRight, size: 14),
+                              icon: const Icon(
+                                LucideIcons.arrowRight,
+                                size: 14,
+                              ),
                               label: const Text('发送'),
                               style: FilledButton.styleFrom(
                                 padding: const EdgeInsets.symmetric(
@@ -396,7 +427,9 @@ class _PeerChatSessionViewState extends State<_PeerChatSessionView> {
           padding: const EdgeInsets.fromLTRB(8, 6, 16, 8),
           decoration: BoxDecoration(
             color: colors.surface,
-            border: Border(bottom: BorderSide(color: colors.outline.withValues(alpha: 0.25))),
+            border: Border(
+              bottom: BorderSide(color: colors.outline.withValues(alpha: 0.25)),
+            ),
           ),
           child: Row(
             children: [
@@ -451,7 +484,9 @@ class _PeerChatSessionViewState extends State<_PeerChatSessionView> {
                   },
                   icon: const Icon(LucideIcons.send, size: 14),
                   label: const Text('发送暂存草稿'),
-                  style: FilledButton.styleFrom(visualDensity: VisualDensity.compact),
+                  style: FilledButton.styleFrom(
+                    visualDensity: VisualDensity.compact,
+                  ),
                 ),
             ],
           ),
@@ -470,17 +505,21 @@ class _PeerChatSessionViewState extends State<_PeerChatSessionView> {
           padding: const EdgeInsets.fromLTRB(14, 8, 14, 12),
           decoration: BoxDecoration(
             color: colors.surface,
-            border: Border(top: BorderSide(color: colors.outline.withValues(alpha: 0.25))),
+            border: Border(
+              top: BorderSide(color: colors.outline.withValues(alpha: 0.25)),
+            ),
           ),
           child: Row(
             children: [
               IconButton(
-                onPressed: () => widget.controller.sendToPeer(widget.peer, directory: false),
+                onPressed: () =>
+                    widget.controller.sendToPeer(widget.peer, directory: false),
                 tooltip: '发送文件',
                 icon: const Icon(LucideIcons.paperclip, size: 20),
               ),
               IconButton(
-                onPressed: () => widget.controller.sendToPeer(widget.peer, directory: true),
+                onPressed: () =>
+                    widget.controller.sendToPeer(widget.peer, directory: true),
                 tooltip: '发送整个文件夹',
                 icon: const Icon(LucideIcons.folder, size: 20),
               ),
@@ -491,7 +530,10 @@ class _PeerChatSessionViewState extends State<_PeerChatSessionView> {
                   decoration: InputDecoration(
                     hintText: '输入便签文字直接发送...',
                     isDense: true,
-                    contentPadding: const EdgeInsets.symmetric(horizontal: 14, vertical: 9),
+                    contentPadding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 9,
+                    ),
                     border: OutlineInputBorder(
                       borderRadius: BorderRadius.circular(22),
                     ),
@@ -545,11 +587,18 @@ class _ChatBubbleTimeline extends StatelessWidget {
           child: Column(
             mainAxisSize: MainAxisSize.min,
             children: [
-              Icon(LucideIcons.messageSquareDashed, size: 44, color: colors.onSurfaceVariant),
+              Icon(
+                LucideIcons.messageSquareDashed,
+                size: 44,
+                color: colors.onSurfaceVariant,
+              ),
               const SizedBox(height: 12),
               Text(
                 '已与「${peer.name}」建立会话',
-                style: const TextStyle(fontSize: 14, fontWeight: FontWeight.w700),
+                style: const TextStyle(
+                  fontSize: 14,
+                  fontWeight: FontWeight.w700,
+                ),
               ),
               const SizedBox(height: 4),
               Text(
@@ -596,7 +645,9 @@ class _ChatBubbleTimeline extends StatelessWidget {
                     Icon(
                       t.state == TransferState.completed
                           ? LucideIcons.checkCircle
-                          : (t.isActive ? LucideIcons.refreshCw : LucideIcons.file),
+                          : (t.isActive
+                                ? LucideIcons.refreshCw
+                                : LucideIcons.file),
                       size: 16,
                       color: colors.primary,
                     ),
@@ -604,7 +655,10 @@ class _ChatBubbleTimeline extends StatelessWidget {
                     Flexible(
                       child: Text(
                         '${t.itemCount} 个文件 · ${formatBytes(t.totalBytes)}',
-                        style: const TextStyle(fontSize: 12, fontWeight: FontWeight.w700),
+                        style: const TextStyle(
+                          fontSize: 12,
+                          fontWeight: FontWeight.w700,
+                        ),
                       ),
                     ),
                   ],
@@ -618,11 +672,18 @@ class _ChatBubbleTimeline extends StatelessWidget {
                     children: [
                       Text(
                         '${formatBytes(t.bytesPerSecond)}/s',
-                        style: TextStyle(fontSize: 10, color: colors.onSurfaceVariant),
+                        style: TextStyle(
+                          fontSize: 10,
+                          color: colors.onSurfaceVariant,
+                        ),
                       ),
                       Text(
                         '${(t.progress * 100).toStringAsFixed(0)}%',
-                        style: TextStyle(fontSize: 10, fontWeight: FontWeight.w700, color: colors.primary),
+                        style: TextStyle(
+                          fontSize: 10,
+                          fontWeight: FontWeight.w700,
+                          color: colors.primary,
+                        ),
                       ),
                     ],
                   ),
@@ -637,7 +698,10 @@ class _ChatBubbleTimeline extends StatelessWidget {
 }
 
 // 辅助共用方法
-Future<void> _showHotspotGuide(BuildContext context, AppController controller) async {
+Future<void> _showHotspotGuide(
+  BuildContext context,
+  AppController controller,
+) async {
   final colors = Theme.of(context).colorScheme;
   await showDialog<void>(
     context: context,
@@ -672,9 +736,9 @@ Future<void> _showHotspotGuide(BuildContext context, AppController controller) a
             Text(
               '在户外、高铁、会议室等没有公共 Wi-Fi 的环境下，可使用设备自带的热点功能建立高速离线互传通道：',
               style: Theme.of(context).textTheme.bodyMedium?.copyWith(
-                    color: colors.onSurfaceVariant,
-                    height: 1.45,
-                  ),
+                color: colors.onSurfaceVariant,
+                height: 1.45,
+              ),
             ),
             const SizedBox(height: 14),
             Container(
@@ -682,14 +746,20 @@ Future<void> _showHotspotGuide(BuildContext context, AppController controller) a
               decoration: BoxDecoration(
                 color: colors.surfaceContainerHighest.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: colors.outline.withValues(alpha: 0.2)),
+                border: Border.all(
+                  color: colors.outline.withValues(alpha: 0.2),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Icon(LucideIcons.smartphone, size: 16, color: colors.primary),
+                      Icon(
+                        LucideIcons.smartphone,
+                        size: 16,
+                        color: colors.primary,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         '方式一：手机开启个人热点（推荐）',
@@ -715,14 +785,20 @@ Future<void> _showHotspotGuide(BuildContext context, AppController controller) a
               decoration: BoxDecoration(
                 color: colors.surfaceContainerHighest.withValues(alpha: 0.5),
                 borderRadius: BorderRadius.circular(12),
-                border: Border.all(color: colors.outline.withValues(alpha: 0.2)),
+                border: Border.all(
+                  color: colors.outline.withValues(alpha: 0.2),
+                ),
               ),
               child: Column(
                 crossAxisAlignment: CrossAxisAlignment.start,
                 children: [
                   Row(
                     children: [
-                      Icon(LucideIcons.monitor, size: 16, color: colors.secondary),
+                      Icon(
+                        LucideIcons.monitor,
+                        size: 16,
+                        color: colors.secondary,
+                      ),
                       const SizedBox(width: 6),
                       Text(
                         '方式二：电脑开启移动热点',
@@ -745,7 +821,11 @@ Future<void> _showHotspotGuide(BuildContext context, AppController controller) a
             const SizedBox(height: 10),
             Row(
               children: [
-                Icon(LucideIcons.info, size: 14, color: colors.onSurfaceVariant),
+                Icon(
+                  LucideIcons.info,
+                  size: 14,
+                  color: colors.onSurfaceVariant,
+                ),
                 const SizedBox(width: 6),
                 Expanded(
                   child: Text(
@@ -773,7 +853,9 @@ Future<void> _showHotspotGuide(BuildContext context, AppController controller) a
                 style: OutlinedButton.styleFrom(
                   minimumSize: const Size(0, 40),
                   padding: EdgeInsets.zero,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 child: const Text('手动输入 IP'),
               ),
@@ -785,10 +867,13 @@ Future<void> _showHotspotGuide(BuildContext context, AppController controller) a
                 style: FilledButton.styleFrom(
                   minimumSize: const Size(0, 40),
                   padding: EdgeInsets.zero,
-                  backgroundColor: Theme.of(context).brightness == Brightness.dark
+                  backgroundColor:
+                      Theme.of(context).brightness == Brightness.dark
                       ? AppTheme.brand400
                       : AppTheme.brand600,
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(10),
+                  ),
                 ),
                 child: const Text('我知道了'),
               ),
@@ -800,7 +885,10 @@ Future<void> _showHotspotGuide(BuildContext context, AppController controller) a
   );
 }
 
-Future<void> _showManualConnect(BuildContext context, AppController controller) async {
+Future<void> _showManualConnect(
+  BuildContext context,
+  AppController controller,
+) async {
   final c = TextEditingController();
   final addr = await showDialog<String>(
     context: context,
@@ -812,8 +900,14 @@ Future<void> _showManualConnect(BuildContext context, AppController controller) 
         decoration: const InputDecoration(hintText: '例如 192.168.1.100:53317'),
       ),
       actions: [
-        TextButton(onPressed: () => Navigator.pop(context), child: const Text('取消')),
-        FilledButton(onPressed: () => Navigator.pop(context, c.text.trim()), child: const Text('连接')),
+        TextButton(
+          onPressed: () => Navigator.pop(context),
+          child: const Text('取消'),
+        ),
+        FilledButton(
+          onPressed: () => Navigator.pop(context, c.text.trim()),
+          child: const Text('连接'),
+        ),
       ],
     ),
   );
@@ -844,7 +938,11 @@ class _ShareDraftBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(isText ? LucideIcons.fileText : LucideIcons.files, size: 16, color: colors.primary),
+          Icon(
+            isText ? LucideIcons.fileText : LucideIcons.files,
+            size: 16,
+            color: colors.primary,
+          ),
           const SizedBox(width: 8),
           Expanded(
             child: Text(

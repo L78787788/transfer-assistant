@@ -86,7 +86,9 @@ class TransferSnapshot {
   };
 
   String? get etaText {
-    if (!isActive || state != TransferState.transferring || bytesPerSecond <= 0) {
+    if (!isActive ||
+        state != TransferState.transferring ||
+        bytesPerSecond <= 0) {
       return null;
     }
     final remainingBytes = (totalBytes - completedBytes).clamp(0, totalBytes);
@@ -351,24 +353,20 @@ class TransferItem {
   final String? finalRef;
 
   factory TransferItem.fromJson(Map<String, Object?> json) => TransferItem(
-        id: json['id']! as String,
-        transferId: json['transfer_id']! as String,
-        relativePath: json['relative_path']! as String,
-        isDirectory: json['kind'] == 'directory',
-        size: (json['size'] as num).toInt(),
-        modifiedUnixMs: (json['modified_unix_ms'] as num).toInt(),
-        sourceRevision: json['source_revision'] as String?,
-        temporaryRef: json['temporary_ref'] as String?,
-        finalRef: json['final_ref'] as String?,
-      );
+    id: json['id']! as String,
+    transferId: json['transfer_id']! as String,
+    relativePath: json['relative_path']! as String,
+    isDirectory: json['kind'] == 'directory',
+    size: (json['size'] as num).toInt(),
+    modifiedUnixMs: (json['modified_unix_ms'] as num).toInt(),
+    sourceRevision: json['source_revision'] as String?,
+    temporaryRef: json['temporary_ref'] as String?,
+    finalRef: json['final_ref'] as String?,
+  );
 }
 
 class SharedPayload {
-  const SharedPayload({
-    required this.type,
-    this.text,
-    this.paths = const [],
-  });
+  const SharedPayload({required this.type, this.text, this.paths = const []});
 
   final String type; // 'text' or 'files'
   final String? text;
@@ -403,14 +401,16 @@ class TrustedPeerInfo {
   final bool autoAccept;
 
   DateTime get createdAt => DateTime.fromMillisecondsSinceEpoch(createdUnixMs);
-  DateTime get lastSeenAt => DateTime.fromMillisecondsSinceEpoch(lastSeenUnixMs);
+  DateTime get lastSeenAt =>
+      DateTime.fromMillisecondsSinceEpoch(lastSeenUnixMs);
 
-  factory TrustedPeerInfo.fromJson(Map<String, Object?> json) => TrustedPeerInfo(
-    peerId: json['peer_id']! as String,
-    displayName: json['display_name']! as String,
-    fingerprintHex: json['fingerprint_hex']! as String,
-    createdUnixMs: (json['created_unix_ms'] as num).toInt(),
-    lastSeenUnixMs: (json['last_seen_unix_ms'] as num).toInt(),
-    autoAccept: json['auto_accept'] == true || json['auto_accept'] == 1,
-  );
+  factory TrustedPeerInfo.fromJson(Map<String, Object?> json) =>
+      TrustedPeerInfo(
+        peerId: json['peer_id']! as String,
+        displayName: json['display_name']! as String,
+        fingerprintHex: json['fingerprint_hex']! as String,
+        createdUnixMs: (json['created_unix_ms'] as num).toInt(),
+        lastSeenUnixMs: (json['last_seen_unix_ms'] as num).toInt(),
+        autoAccept: json['auto_accept'] == true || json['auto_accept'] == 1,
+      );
 }

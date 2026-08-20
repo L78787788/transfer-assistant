@@ -58,7 +58,11 @@ class _SettingsViewState extends State<SettingsView> {
                 children: [
                   Row(
                     children: [
-                      Icon(LucideIcons.sunMoon, size: 16, color: colors.primary),
+                      Icon(
+                        LucideIcons.sunMoon,
+                        size: 16,
+                        color: colors.primary,
+                      ),
                       const SizedBox(width: 8),
                       Text(
                         '明暗外观模式',
@@ -93,8 +97,8 @@ class _SettingsViewState extends State<SettingsView> {
                       selected: {settings.themeMode},
                       onSelectionChanged: (value) =>
                           widget.controller.updateSettings(
-                        settings.copyWith(themeMode: value.first),
-                      ),
+                            settings.copyWith(themeMode: value.first),
+                          ),
                     ),
                   ),
                 ],
@@ -154,8 +158,11 @@ class _SettingsViewState extends State<SettingsView> {
                         color: colors.primary.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Icon(LucideIcons.folderOpen,
-                          color: colors.primary, size: 20),
+                      child: Icon(
+                        LucideIcons.folderOpen,
+                        color: colors.primary,
+                        size: 20,
+                      ),
                     ),
                     title: const Text('接收文件保存目录'),
                     subtitle: Text(
@@ -163,7 +170,9 @@ class _SettingsViewState extends State<SettingsView> {
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                       style: TextStyle(
-                          color: colors.onSurfaceVariant, fontSize: 12),
+                        color: colors.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
                     ),
                     trailing: FilledButton.tonal(
                       onPressed: widget.controller.chooseReceiveDirectory,
@@ -180,8 +189,7 @@ class _SettingsViewState extends State<SettingsView> {
                       ),
                       child: Row(
                         children: [
-                          Icon(LucideIcons.info,
-                              size: 16, color: colors.error),
+                          Icon(LucideIcons.info, size: 16, color: colors.error),
                           const SizedBox(width: 8),
                           Expanded(
                             child: Text(
@@ -214,8 +222,11 @@ class _SettingsViewState extends State<SettingsView> {
                         color: colors.primary.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Icon(LucideIcons.radio,
-                          color: colors.primary, size: 20),
+                      child: Icon(
+                        LucideIcons.radio,
+                        color: colors.primary,
+                        size: 20,
+                      ),
                     ),
                     title: const Text('后台息屏保活传输'),
                     subtitle: const Text('在后台或息屏时保持 Wi-Fi 高性能传输与保活连接'),
@@ -233,8 +244,11 @@ class _SettingsViewState extends State<SettingsView> {
                         color: colors.secondary.withValues(alpha: 0.1),
                         borderRadius: BorderRadius.circular(8),
                       ),
-                      child: Icon(LucideIcons.shieldAlert,
-                          color: colors.secondary, size: 20),
+                      child: Icon(
+                        LucideIcons.shieldAlert,
+                        color: colors.secondary,
+                        size: 20,
+                      ),
                     ),
                     title: const Text('自动接收可信设备传输'),
                     subtitle: const Text('来自已信任设备的文件无需弹窗确认直接接收'),
@@ -278,18 +292,25 @@ class _SettingsViewState extends State<SettingsView> {
                       },
                     ),
                   ],
-                  if (Platform.isAndroid && !widget.controller.isNotificationPermissionGranted) ...[
+                  if (Platform.isAndroid &&
+                      !widget.controller.isNotificationPermissionGranted) ...[
                     const Divider(),
                     Container(
                       padding: const EdgeInsets.all(12),
                       decoration: BoxDecoration(
                         color: colors.errorContainer.withValues(alpha: 0.5),
                         borderRadius: BorderRadius.circular(12),
-                        border: Border.all(color: colors.error.withValues(alpha: 0.3)),
+                        border: Border.all(
+                          color: colors.error.withValues(alpha: 0.3),
+                        ),
                       ),
                       child: Row(
                         children: [
-                          Icon(LucideIcons.bellOff, color: colors.error, size: 20),
+                          Icon(
+                            LucideIcons.bellOff,
+                            color: colors.error,
+                            size: 20,
+                          ),
                           const SizedBox(width: 10),
                           Expanded(
                             child: Column(
@@ -297,19 +318,29 @@ class _SettingsViewState extends State<SettingsView> {
                               children: [
                                 const Text(
                                   '通知权限未开启',
-                                  style: TextStyle(fontSize: 13, fontWeight: FontWeight.w700),
+                                  style: TextStyle(
+                                    fontSize: 13,
+                                    fontWeight: FontWeight.w700,
+                                  ),
                                 ),
                                 Text(
                                   '开启通知后可在后台实时查看传输进度与接收弹窗提醒',
-                                  style: TextStyle(fontSize: 11, color: colors.onErrorContainer),
+                                  style: TextStyle(
+                                    fontSize: 11,
+                                    color: colors.onErrorContainer,
+                                  ),
                                 ),
                               ],
                             ),
                           ),
                           FilledButton.tonal(
-                            onPressed: () => widget.controller.requestNotificationPermission(),
+                            onPressed: () => widget.controller
+                                .requestNotificationPermission(),
                             style: FilledButton.styleFrom(
-                              padding: const EdgeInsets.symmetric(horizontal: 10, vertical: 6),
+                              padding: const EdgeInsets.symmetric(
+                                horizontal: 10,
+                                vertical: 6,
+                              ),
                               textStyle: const TextStyle(fontSize: 12),
                             ),
                             child: const Text('去开启'),
@@ -326,7 +357,10 @@ class _SettingsViewState extends State<SettingsView> {
             Row(
               mainAxisAlignment: MainAxisAlignment.spaceBetween,
               children: [
-                _SectionHeader(title: '已信任设备 (${widget.controller.trustedPeers.length})', icon: LucideIcons.shieldCheck),
+                _SectionHeader(
+                  title: '已信任设备 (${widget.controller.trustedPeers.length})',
+                  icon: LucideIcons.shieldCheck,
+                ),
                 if (widget.controller.trustedPeers.isNotEmpty)
                   TextButton.icon(
                     onPressed: () async {
@@ -334,11 +368,18 @@ class _SettingsViewState extends State<SettingsView> {
                         context: context,
                         builder: (ctx) => AlertDialog(
                           title: const Text('清空可信设备'),
-                          content: const Text('确定要清空所有已信任的设备绑定吗？清空后来自这些设备的传输将重新弹窗确认。'),
+                          content: const Text(
+                            '确定要清空所有已信任的设备绑定吗？清空后来自这些设备的传输将重新弹窗确认。',
+                          ),
                           actions: [
-                            TextButton(onPressed: () => Navigator.pop(ctx, false), child: const Text('取消')),
+                            TextButton(
+                              onPressed: () => Navigator.pop(ctx, false),
+                              child: const Text('取消'),
+                            ),
                             FilledButton(
-                              style: FilledButton.styleFrom(backgroundColor: colors.error),
+                              style: FilledButton.styleFrom(
+                                backgroundColor: colors.error,
+                              ),
                               onPressed: () => Navigator.pop(ctx, true),
                               child: const Text('确认清空'),
                             ),
@@ -349,8 +390,15 @@ class _SettingsViewState extends State<SettingsView> {
                         await widget.controller.clearTrustedPeers();
                       }
                     },
-                    icon: const Icon(LucideIcons.trash2, size: 14, color: Colors.redAccent),
-                    label: const Text('清空全部', style: TextStyle(fontSize: 12, color: Colors.redAccent)),
+                    icon: const Icon(
+                      LucideIcons.trash2,
+                      size: 14,
+                      color: Colors.redAccent,
+                    ),
+                    label: const Text(
+                      '清空全部',
+                      style: TextStyle(fontSize: 12, color: Colors.redAccent),
+                    ),
                   ),
               ],
             ),
@@ -359,35 +407,51 @@ class _SettingsViewState extends State<SettingsView> {
               padding: const EdgeInsets.all(16),
               child: Column(
                 children: [
-                  ...widget.controller.trustedPeers.map(
-                    (peer) {
-                      final fpShort = peer.fingerprintHex.length > 16
-                          ? '${peer.fingerprintHex.substring(0, 8)}...${peer.fingerprintHex.substring(peer.fingerprintHex.length - 8)}'
-                          : peer.fingerprintHex;
-                      return ListTile(
-                        contentPadding: EdgeInsets.zero,
-                        leading: Container(
-                          padding: const EdgeInsets.all(8),
-                          decoration: BoxDecoration(
-                            color: colors.primary.withValues(alpha: 0.1),
-                            borderRadius: BorderRadius.circular(8),
-                          ),
-                          child: Icon(LucideIcons.shieldCheck, color: colors.primary, size: 20),
+                  ...widget.controller.trustedPeers.map((peer) {
+                    final fpShort = peer.fingerprintHex.length > 16
+                        ? '${peer.fingerprintHex.substring(0, 8)}...${peer.fingerprintHex.substring(peer.fingerprintHex.length - 8)}'
+                        : peer.fingerprintHex;
+                    return ListTile(
+                      contentPadding: EdgeInsets.zero,
+                      leading: Container(
+                        padding: const EdgeInsets.all(8),
+                        decoration: BoxDecoration(
+                          color: colors.primary.withValues(alpha: 0.1),
+                          borderRadius: BorderRadius.circular(8),
                         ),
-                        title: Text(peer.displayName, style: const TextStyle(fontWeight: FontWeight.w600, fontSize: 14)),
-                        subtitle: Text(
-                          '指纹: $fpShort\n首次添加: ${_formatDate(peer.createdAt)}',
-                          style: TextStyle(fontSize: 11, color: colors.onSurfaceVariant),
+                        child: Icon(
+                          LucideIcons.shieldCheck,
+                          color: colors.primary,
+                          size: 20,
                         ),
-                        isThreeLine: true,
-                        trailing: IconButton(
-                          onPressed: () => widget.controller.removeTrustedPeer(peer.peerId),
-                          tooltip: '取消信任',
-                          icon: const Icon(LucideIcons.userMinus, size: 18, color: Colors.redAccent),
+                      ),
+                      title: Text(
+                        peer.displayName,
+                        style: const TextStyle(
+                          fontWeight: FontWeight.w600,
+                          fontSize: 14,
                         ),
-                      );
-                    },
-                  ),
+                      ),
+                      subtitle: Text(
+                        '指纹: $fpShort\n首次添加: ${_formatDate(peer.createdAt)}',
+                        style: TextStyle(
+                          fontSize: 11,
+                          color: colors.onSurfaceVariant,
+                        ),
+                      ),
+                      isThreeLine: true,
+                      trailing: IconButton(
+                        onPressed: () =>
+                            widget.controller.removeTrustedPeer(peer.peerId),
+                        tooltip: '取消信任',
+                        icon: const Icon(
+                          LucideIcons.userMinus,
+                          size: 18,
+                          color: Colors.redAccent,
+                        ),
+                      ),
+                    );
+                  }),
                   if (widget.controller.trustedPeers.isEmpty)
                     Padding(
                       padding: const EdgeInsets.symmetric(vertical: 12),
@@ -438,10 +502,10 @@ class _SectionHeader extends StatelessWidget {
         Text(
           title,
           style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                fontWeight: FontWeight.w700,
-                color: colors.primary,
-                letterSpacing: -0.2,
-              ),
+            fontWeight: FontWeight.w700,
+            color: colors.primary,
+            letterSpacing: -0.2,
+          ),
         ),
       ],
     );

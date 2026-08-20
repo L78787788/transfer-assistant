@@ -111,11 +111,10 @@ class PlatformBridge {
   Future<void> openDirectory(String path, {String? selectFile}) async {
     if (Platform.isWindows) {
       if (selectFile != null && File(selectFile).existsSync()) {
-        await Process.run(
-          'explorer.exe',
-          ['/select,', selectFile],
-          runInShell: true,
-        );
+        await Process.run('explorer.exe', [
+          '/select,',
+          selectFile,
+        ], runInShell: true);
         return;
       }
       if (Directory(path).existsSync()) {
@@ -137,7 +136,9 @@ class PlatformBridge {
 
   Future<SharedPayload?> getSharedPayload() async {
     try {
-      final res = await _channel.invokeMapMethod<String, Object?>('getSharedPayload');
+      final res = await _channel.invokeMapMethod<String, Object?>(
+        'getSharedPayload',
+      );
       if (res != null) {
         return SharedPayload.fromJson(res);
       }
@@ -225,7 +226,9 @@ class PlatformBridge {
 
   Future<bool> checkNotificationPermission() async {
     try {
-      final res = await _channel.invokeMethod<bool>('checkNotificationPermission');
+      final res = await _channel.invokeMethod<bool>(
+        'checkNotificationPermission',
+      );
       return res ?? true;
     } catch (_) {
       return true;

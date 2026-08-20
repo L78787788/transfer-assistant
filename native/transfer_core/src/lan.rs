@@ -160,10 +160,13 @@ async fn accept_loop(
                     }
                     _ => Err(LanError::UnexpectedMessage("connection kind")),
                 };
-                let is_cancelled = outcome.as_ref().err().is_some_and(|e| e.is_cancelled())
-                    || handler_inner.transfer_is_cancelled(transfer_id);
+                let is_cancelled = !handler_inner.shutdown.is_cancelled()
+                    && (outcome.as_ref().err().is_some_and(|e| e.is_cancelled())
+                        || handler_inner.transfer_is_cancelled(transfer_id));
                 if let Err(error) = &outcome {
-                    if is_cancelled {
+                    if handler_inner.shutdown.is_cancelled() {
+                        log::info!("核心系统正在关机，保持接收任务状态以供重启恢复 {transfer_id}");
+                    } else if is_cancelled {
                         let _ = handler_inner.cancel_transfer_with_error(
                             transfer_id,
                             match error {

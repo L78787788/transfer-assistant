@@ -94,8 +94,7 @@ class _HistoryViewState extends State<HistoryView> {
                         controller: _searchController,
                         decoration: InputDecoration(
                           hintText: '搜索文件名、路径或设备名...',
-                          prefixIcon:
-                              const Icon(LucideIcons.search, size: 18),
+                          prefixIcon: const Icon(LucideIcons.search, size: 18),
                           suffixIcon: _searchQuery.isNotEmpty
                               ? IconButton(
                                   onPressed: () {
@@ -145,40 +144,54 @@ class _HistoryViewState extends State<HistoryView> {
                   child: SingleChildScrollView(
                     scrollDirection: Axis.horizontal,
                     child: Row(
-                      children: HistoryCategoryFilter.values.map((cat) {
-                        final isSelected = _categoryFilter == cat;
-                        final isDark = Theme.of(context).brightness == Brightness.dark;
-                        final activeColor = isDark ? colors.primary : const Color(0xff0284c7);
-                        return Padding(
-                          padding: const EdgeInsets.only(right: 6),
-                          child: FilterChip(
-                            label: Text(
-                              cat.label,
-                              style: TextStyle(
-                                fontSize: 12,
-                                fontWeight: isSelected ? FontWeight.w600 : FontWeight.w500,
-                                color: isSelected
-                                    ? activeColor
-                                    : colors.onSurfaceVariant,
+                      children: HistoryCategoryFilter.values
+                          .map((cat) {
+                            final isSelected = _categoryFilter == cat;
+                            final isDark =
+                                Theme.of(context).brightness == Brightness.dark;
+                            final activeColor = isDark
+                                ? colors.primary
+                                : const Color(0xff0284c7);
+                            return Padding(
+                              padding: const EdgeInsets.only(right: 6),
+                              child: FilterChip(
+                                label: Text(
+                                  cat.label,
+                                  style: TextStyle(
+                                    fontSize: 12,
+                                    fontWeight: isSelected
+                                        ? FontWeight.w600
+                                        : FontWeight.w500,
+                                    color: isSelected
+                                        ? activeColor
+                                        : colors.onSurfaceVariant,
+                                  ),
+                                ),
+                                selected: isSelected,
+                                onSelected: (_) =>
+                                    setState(() => _categoryFilter = cat),
+                                visualDensity: VisualDensity.compact,
+                                showCheckmark: false,
+                                materialTapTargetSize:
+                                    MaterialTapTargetSize.shrinkWrap,
+                                backgroundColor: isDark
+                                    ? Colors.transparent
+                                    : colors.surface,
+                                selectedColor: activeColor.withValues(
+                                  alpha: isDark ? 0.20 : 0.12,
+                                ),
+                                side: BorderSide(
+                                  color: isSelected
+                                      ? activeColor
+                                      : colors.outline.withValues(
+                                          alpha: isDark ? 0.35 : 0.6,
+                                        ),
+                                  width: isSelected ? 1.4 : 1.0,
+                                ),
                               ),
-                            ),
-                            selected: isSelected,
-                            onSelected: (_) =>
-                                setState(() => _categoryFilter = cat),
-                            visualDensity: VisualDensity.compact,
-                            showCheckmark: false,
-                            materialTapTargetSize: MaterialTapTargetSize.shrinkWrap,
-                            backgroundColor: isDark ? Colors.transparent : colors.surface,
-                            selectedColor: activeColor.withValues(alpha: isDark ? 0.20 : 0.12),
-                            side: BorderSide(
-                              color: isSelected
-                                  ? activeColor
-                                  : colors.outline.withValues(alpha: isDark ? 0.35 : 0.6),
-                              width: isSelected ? 1.4 : 1.0,
-                            ),
-                          ),
-                        );
-                      }).toList(growable: false),
+                            );
+                          })
+                          .toList(growable: false),
                     ),
                   ),
                 ),
@@ -196,36 +209,44 @@ class _HistoryViewState extends State<HistoryView> {
 
   Widget _buildFilesList() {
     final query = _searchQuery.toLowerCase();
-    final files = widget.controller.historyFiles.where((file) {
-      if (_directionFilter == HistoryDirectionFilter.incoming &&
-          file.direction != TransferDirection.incoming) {
-        return false;
-      }
-      if (_directionFilter == HistoryDirectionFilter.outgoing &&
-          file.direction != TransferDirection.outgoing) {
-        return false;
-      }
-      if (!_matchesCategory(file.fileName)) {
-        return false;
-      }
-      if (query.isNotEmpty) {
-        final matchesName = file.fileName.toLowerCase().contains(query);
-        final matchesPath = file.relativePath.toLowerCase().contains(query);
-        final matchesPeer = file.peerName.toLowerCase().contains(query);
-        if (!matchesName && !matchesPath && !matchesPeer) return false;
-      }
-      return true;
-    }).toList(growable: false);
+    final files = widget.controller.historyFiles
+        .where((file) {
+          if (_directionFilter == HistoryDirectionFilter.incoming &&
+              file.direction != TransferDirection.incoming) {
+            return false;
+          }
+          if (_directionFilter == HistoryDirectionFilter.outgoing &&
+              file.direction != TransferDirection.outgoing) {
+            return false;
+          }
+          if (!_matchesCategory(file.fileName)) {
+            return false;
+          }
+          if (query.isNotEmpty) {
+            final matchesName = file.fileName.toLowerCase().contains(query);
+            final matchesPath = file.relativePath.toLowerCase().contains(query);
+            final matchesPeer = file.peerName.toLowerCase().contains(query);
+            if (!matchesName && !matchesPath && !matchesPeer) return false;
+          }
+          return true;
+        })
+        .toList(growable: false);
 
     if (files.isEmpty) {
       return EmptyState(
-        title: _searchQuery.isNotEmpty || _categoryFilter != HistoryCategoryFilter.all
+        title:
+            _searchQuery.isNotEmpty ||
+                _categoryFilter != HistoryCategoryFilter.all
             ? '没有找到匹配的历史文件'
             : '暂无已完成的传输文件',
-        description: _searchQuery.isNotEmpty || _categoryFilter != HistoryCategoryFilter.all
+        description:
+            _searchQuery.isNotEmpty ||
+                _categoryFilter != HistoryCategoryFilter.all
             ? '尝试更换搜索关键词或选择其他分类'
             : '从「附近设备」发送或接收文件后将在此汇总展示',
-        action: _searchQuery.isNotEmpty || _categoryFilter != HistoryCategoryFilter.all
+        action:
+            _searchQuery.isNotEmpty ||
+                _categoryFilter != HistoryCategoryFilter.all
             ? OutlinedButton.icon(
                 onPressed: () {
                   _searchController.clear();
@@ -257,50 +278,96 @@ class _HistoryViewState extends State<HistoryView> {
           onOpen: () => widget.controller.openHistoryFile(item),
           onLocate: () => widget.controller.locateHistoryFile(item),
           onShare: () => widget.controller.shareHistoryFile(item),
-          onInstall: isApk ? () => widget.controller.installHistoryFile(item) : null,
+          onInstall: isApk
+              ? () => widget.controller.installHistoryFile(item)
+              : null,
         );
       },
     );
   }
 
   bool _matchesCategory(String fileName) {
-    final ext = fileName.contains('.') ? fileName.split('.').last.toLowerCase() : '';
+    final ext = fileName.contains('.')
+        ? fileName.split('.').last.toLowerCase()
+        : '';
     return switch (_categoryFilter) {
       HistoryCategoryFilter.all => true,
       HistoryCategoryFilter.media => const [
-        'png', 'jpg', 'jpeg', 'gif', 'webp', 'bmp', 'svg',
-        'mp4', 'mkv', 'avi', 'mov', 'flv', 'wmv', 'webm',
-        'mp3', 'wav', 'flac', 'aac', 'm4a', 'ogg'
+        'png',
+        'jpg',
+        'jpeg',
+        'gif',
+        'webp',
+        'bmp',
+        'svg',
+        'mp4',
+        'mkv',
+        'avi',
+        'mov',
+        'flv',
+        'wmv',
+        'webm',
+        'mp3',
+        'wav',
+        'flac',
+        'aac',
+        'm4a',
+        'ogg',
       ].contains(ext),
       HistoryCategoryFilter.docs => const [
-        'pdf', 'doc', 'docx', 'xls', 'xlsx', 'ppt', 'pptx',
-        'txt', 'md', 'json', 'yaml', 'log', 'csv'
+        'pdf',
+        'doc',
+        'docx',
+        'xls',
+        'xlsx',
+        'ppt',
+        'pptx',
+        'txt',
+        'md',
+        'json',
+        'yaml',
+        'log',
+        'csv',
       ].contains(ext),
       HistoryCategoryFilter.apps => const [
-        'apk', 'exe', 'msi', 'dmg', 'deb', 'rpm'
+        'apk',
+        'exe',
+        'msi',
+        'dmg',
+        'deb',
+        'rpm',
       ].contains(ext),
       HistoryCategoryFilter.archives => const [
-        'zip', 'rar', '7z', 'tar', 'gz', 'bz2'
+        'zip',
+        'rar',
+        '7z',
+        'tar',
+        'gz',
+        'bz2',
       ].contains(ext),
     };
   }
 
   Widget _buildBatchesList() {
-    final completedTransfers = widget.controller.transfers.where((t) {
-      if (t.state != TransferState.completed) return false;
-      if (_directionFilter == HistoryDirectionFilter.incoming &&
-          t.direction != TransferDirection.incoming) {
-        return false;
-      }
-      if (_directionFilter == HistoryDirectionFilter.outgoing &&
-          t.direction != TransferDirection.outgoing) {
-        return false;
-      }
-      if (_searchQuery.isNotEmpty) {
-        return t.peerName.toLowerCase().contains(_searchQuery.toLowerCase());
-      }
-      return true;
-    }).toList(growable: false);
+    final completedTransfers = widget.controller.transfers
+        .where((t) {
+          if (t.state != TransferState.completed) return false;
+          if (_directionFilter == HistoryDirectionFilter.incoming &&
+              t.direction != TransferDirection.incoming) {
+            return false;
+          }
+          if (_directionFilter == HistoryDirectionFilter.outgoing &&
+              t.direction != TransferDirection.outgoing) {
+            return false;
+          }
+          if (_searchQuery.isNotEmpty) {
+            return t.peerName.toLowerCase().contains(
+              _searchQuery.toLowerCase(),
+            );
+          }
+          return true;
+        })
+        .toList(growable: false);
 
     if (completedTransfers.isEmpty) {
       return EmptyState(
@@ -399,9 +466,9 @@ class _HistoryFileCard extends StatelessWidget {
                     Text(
                       item.fileName,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w600,
-                            height: 1.25,
-                          ),
+                        fontWeight: FontWeight.w600,
+                        height: 1.25,
+                      ),
                       maxLines: 2,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -431,9 +498,9 @@ class _HistoryFileCard extends StatelessWidget {
                         ],
                       ),
                       style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                            color: colors.onSurfaceVariant,
-                            fontSize: 12,
-                          ),
+                        color: colors.onSurfaceVariant,
+                        fontSize: 12,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -486,18 +553,41 @@ class _HistoryFileCard extends StatelessWidget {
         ? fileName.split('.').last.toLowerCase()
         : '';
     return switch (ext) {
-      'png' || 'jpg' || 'jpeg' || 'gif' || 'webp' || 'bmp' || 'svg' =>
-        LucideIcons.image,
-      'mp4' || 'mkv' || 'avi' || 'mov' || 'flv' || 'wmv' || 'webm' =>
-        LucideIcons.video,
-      'mp3' || 'wav' || 'flac' || 'aac' || 'm4a' || 'ogg' =>
-        LucideIcons.music,
-      'zip' || 'rar' || '7z' || 'tar' || 'gz' || 'bz2' =>
-        LucideIcons.archive,
-      'pdf' || 'doc' || 'docx' || 'xls' || 'xlsx' || 'ppt' || 'pptx' || 'txt' || 'md' =>
-        LucideIcons.fileText,
-      'apk' || 'exe' || 'msi' || 'dmg' || 'sh' || 'bat' || 'dart' || 'rs' || 'json' || 'yaml' =>
-        LucideIcons.fileCode,
+      'png' ||
+      'jpg' ||
+      'jpeg' ||
+      'gif' ||
+      'webp' ||
+      'bmp' ||
+      'svg' => LucideIcons.image,
+      'mp4' ||
+      'mkv' ||
+      'avi' ||
+      'mov' ||
+      'flv' ||
+      'wmv' ||
+      'webm' => LucideIcons.video,
+      'mp3' || 'wav' || 'flac' || 'aac' || 'm4a' || 'ogg' => LucideIcons.music,
+      'zip' || 'rar' || '7z' || 'tar' || 'gz' || 'bz2' => LucideIcons.archive,
+      'pdf' ||
+      'doc' ||
+      'docx' ||
+      'xls' ||
+      'xlsx' ||
+      'ppt' ||
+      'pptx' ||
+      'txt' ||
+      'md' => LucideIcons.fileText,
+      'apk' ||
+      'exe' ||
+      'msi' ||
+      'dmg' ||
+      'sh' ||
+      'bat' ||
+      'dart' ||
+      'rs' ||
+      'json' ||
+      'yaml' => LucideIcons.fileCode,
       _ => LucideIcons.file,
     };
   }
@@ -513,10 +603,7 @@ class _HistoryFileCard extends StatelessWidget {
 }
 
 class _HistoryBatchCard extends StatefulWidget {
-  const _HistoryBatchCard({
-    required this.transfer,
-    required this.controller,
-  });
+  const _HistoryBatchCard({required this.transfer, required this.controller});
 
   final TransferSnapshot transfer;
   final AppController controller;
@@ -535,7 +622,9 @@ class _HistoryBatchCardState extends State<_HistoryBatchCard> {
     setState(() => _expanded = next);
     if (next && _items == null) {
       setState(() => _isLoadingItems = true);
-      final items = await widget.controller.loadTransferItems(widget.transfer.id);
+      final items = await widget.controller.loadTransferItems(
+        widget.transfer.id,
+      );
       if (mounted) {
         setState(() {
           _items = items;
@@ -569,8 +658,8 @@ class _HistoryBatchCardState extends State<_HistoryBatchCard> {
                     Text(
                       t.peerName,
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w600,
-                          ),
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                     const SizedBox(height: 2),
                     Text(
@@ -609,10 +698,7 @@ class _HistoryBatchCardState extends State<_HistoryBatchCard> {
                 child: Center(child: CircularProgressIndicator()),
               )
             else if (_items != null && _items!.isEmpty)
-              const Padding(
-                padding: EdgeInsets.all(16),
-                child: Text('无详细文件记录'),
-              )
+              const Padding(padding: EdgeInsets.all(16), child: Text('无详细文件记录'))
             else if (_items != null)
               ListView.builder(
                 shrinkWrap: true,

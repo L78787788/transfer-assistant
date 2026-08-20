@@ -37,8 +37,14 @@ class _TransfersViewState extends State<TransfersView> {
                     icon: const Icon(LucideIcons.history, size: 16),
                     label: const Text('传输历史'),
                     style: FilledButton.styleFrom(
-                      padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                      textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
+                      padding: const EdgeInsets.symmetric(
+                        horizontal: 14,
+                        vertical: 8,
+                      ),
+                      textStyle: const TextStyle(
+                        fontSize: 12,
+                        fontWeight: FontWeight.w600,
+                      ),
                     ),
                   ),
                 ],
@@ -59,13 +65,19 @@ class _TransfersViewState extends State<TransfersView> {
                               icon: const Icon(LucideIcons.radio, size: 16),
                               label: const Text('发现附近设备'),
                               style: FilledButton.styleFrom(
-                                backgroundColor: Theme.of(context).brightness == Brightness.dark
+                                backgroundColor:
+                                    Theme.of(context).brightness ==
+                                        Brightness.dark
                                     ? AppTheme.brand400
                                     : AppTheme.brand600,
                                 foregroundColor: Colors.white,
                                 minimumSize: const Size(140, 40),
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
                               ),
                             ),
                             OutlinedButton.icon(
@@ -74,8 +86,12 @@ class _TransfersViewState extends State<TransfersView> {
                               label: const Text('查看历史归档'),
                               style: OutlinedButton.styleFrom(
                                 minimumSize: const Size(140, 40),
-                                padding: const EdgeInsets.symmetric(horizontal: 16),
-                                shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(10)),
+                                padding: const EdgeInsets.symmetric(
+                                  horizontal: 16,
+                                ),
+                                shape: RoundedRectangleBorder(
+                                  borderRadius: BorderRadius.circular(10),
+                                ),
                               ),
                             ),
                           ],
@@ -143,8 +159,11 @@ class _TransferCardState extends State<_TransferCard> {
                   ),
                   boxShadow: [
                     BoxShadow(
-                      color: (isIncoming ? const Color(0xff06b6d4) : AppTheme.brand500)
-                          .withValues(alpha: 0.3),
+                      color:
+                          (isIncoming
+                                  ? const Color(0xff06b6d4)
+                                  : AppTheme.brand500)
+                              .withValues(alpha: 0.3),
                       blurRadius: 10,
                       offset: const Offset(0, 3),
                     ),
@@ -166,9 +185,9 @@ class _TransferCardState extends State<_TransferCard> {
                           ? '接收自「${widget.transfer.peerName}」'
                           : '发送至「${widget.transfer.peerName}」',
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.2,
-                          ),
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.2,
+                      ),
                       maxLines: 1,
                       overflow: TextOverflow.ellipsis,
                     ),
@@ -190,10 +209,7 @@ class _TransferCardState extends State<_TransferCard> {
           const SizedBox(height: 18),
 
           // 8px 品牌渐变 + 白色流光 sweep 进度条
-          LiquidProgressBar(
-            progress: widget.transfer.progress,
-            height: 8,
-          ),
+          LiquidProgressBar(progress: widget.transfer.progress, height: 8),
           const SizedBox(height: 12),
 
           // 进度数值与速度信息
@@ -220,9 +236,14 @@ class _TransferCardState extends State<_TransferCard> {
               if (widget.transfer.bytesPerSecond > 0 &&
                   widget.transfer.state == TransferState.transferring) ...[
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 3),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 8,
+                    vertical: 3,
+                  ),
                   decoration: BoxDecoration(
-                    color: colors.primary.withValues(alpha: isDark ? 0.2 : 0.12),
+                    color: colors.primary.withValues(
+                      alpha: isDark ? 0.2 : 0.12,
+                    ),
                     borderRadius: BorderRadius.circular(6),
                   ),
                   child: Text(
@@ -289,18 +310,26 @@ class _TransferCardState extends State<_TransferCard> {
                   borderRadius: BorderRadius.circular(6),
                   onTap: () => setState(() => _expanded = !_expanded),
                   child: Padding(
-                    padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 4),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 6,
+                      vertical: 4,
+                    ),
                     child: Row(
                       children: [
                         Icon(
-                          _expanded ? LucideIcons.chevronUp : LucideIcons.chevronDown,
+                          _expanded
+                              ? LucideIcons.chevronUp
+                              : LucideIcons.chevronDown,
                           size: 14,
                           color: colors.onSurfaceVariant,
                         ),
                         const SizedBox(width: 4),
                         Text(
                           _expanded ? '收起文件清单' : '查看文件清单',
-                          style: TextStyle(fontSize: 12, color: colors.onSurfaceVariant),
+                          style: TextStyle(
+                            fontSize: 12,
+                            color: colors.onSurfaceVariant,
+                          ),
                         ),
                       ],
                     ),
@@ -313,9 +342,17 @@ class _TransferCardState extends State<_TransferCard> {
                   icon: const Icon(LucideIcons.pause, size: 14),
                   label: const Text('暂停'),
                   style: OutlinedButton.styleFrom(
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
               if (widget.transfer.state == TransferState.paused)
@@ -324,11 +361,21 @@ class _TransferCardState extends State<_TransferCard> {
                   icon: const Icon(LucideIcons.play, size: 14),
                   label: const Text('继续'),
                   style: FilledButton.styleFrom(
-                    backgroundColor: isDark ? AppTheme.brand400 : AppTheme.brand600,
+                    backgroundColor: isDark
+                        ? AppTheme.brand400
+                        : AppTheme.brand600,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
               if (widget.transfer.state == TransferState.interrupted)
@@ -337,11 +384,21 @@ class _TransferCardState extends State<_TransferCard> {
                   icon: const Icon(LucideIcons.rotateCw, size: 14),
                   label: const Text('重试'),
                   style: FilledButton.styleFrom(
-                    backgroundColor: isDark ? AppTheme.brand400 : AppTheme.brand600,
+                    backgroundColor: isDark
+                        ? AppTheme.brand400
+                        : AppTheme.brand600,
                     foregroundColor: Colors.white,
-                    padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                    textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                    shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                    padding: const EdgeInsets.symmetric(
+                      horizontal: 14,
+                      vertical: 8,
+                    ),
+                    textStyle: const TextStyle(
+                      fontSize: 12,
+                      fontWeight: FontWeight.w600,
+                    ),
+                    shape: RoundedRectangleBorder(
+                      borderRadius: BorderRadius.circular(8),
+                    ),
                   ),
                 ),
               const SizedBox(width: 8),
@@ -350,9 +407,17 @@ class _TransferCardState extends State<_TransferCard> {
                 icon: const Icon(LucideIcons.x, size: 14),
                 label: const Text('取消'),
                 style: OutlinedButton.styleFrom(
-                  padding: const EdgeInsets.symmetric(horizontal: 14, vertical: 8),
-                  textStyle: const TextStyle(fontSize: 12, fontWeight: FontWeight.w600),
-                  shape: RoundedRectangleBorder(borderRadius: BorderRadius.circular(8)),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 14,
+                    vertical: 8,
+                  ),
+                  textStyle: const TextStyle(
+                    fontSize: 12,
+                    fontWeight: FontWeight.w600,
+                  ),
+                  shape: RoundedRectangleBorder(
+                    borderRadius: BorderRadius.circular(8),
+                  ),
                 ),
               ),
             ],

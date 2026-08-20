@@ -571,6 +571,9 @@ impl TransferCore {
             for stored in state.outgoing_jobs.values() {
                 stored.control.cancel();
             }
+            for transfer in state.transfers.values() {
+                let _ = self.inner.repository.save_transfer(transfer);
+            }
         }
         if let Some(network) = self
             .network
@@ -595,7 +598,9 @@ impl TransferCore {
             if let Err(error) =
                 lan::run_outgoing(inner.clone(), transfer_id, peer, job, control).await
             {
-                if error.is_cancelled() {
+                if inner.shutdown.is_cancelled() {
+                    log::info!("核心系统正在关机，保持发送任务状态以供重启恢复 {transfer_id}");
+                } else if error.is_cancelled() {
                     log::info!("发送任务已取消 {transfer_id}: {error}");
                     let _ = inner.cancel_transfer_with_error(
                         transfer_id,
@@ -741,7 +746,9 @@ impl CoreInner {
         };
 
         // 关键性能优化：节流写入 SQLite。避免高并发/高速网络下逐块频繁同步触发磁盘 SQLite 写事务
+        let first_progress = previous_completed == 0 && completed > 0;
         let should_save_db = completed >= total_bytes
+            || first_progress
             || now.duration_since(sample.last_saved_at) >= Duration::from_millis(500);
         if should_save_db {
             sample.last_saved_at = now;

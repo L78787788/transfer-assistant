@@ -61,9 +61,7 @@ class AppShell extends StatelessWidget {
           children: [
             // 自适应主题氛围背景
             Positioned.fill(
-              child: RepaintBoundary(
-                child: _AmbientBackground(isDark: isDark),
-              ),
+              child: RepaintBoundary(child: _AmbientBackground(isDark: isDark)),
             ),
             Scaffold(
               backgroundColor: Colors.transparent,
@@ -80,7 +78,9 @@ class AppShell extends StatelessWidget {
                       NoticeBanner(
                         message: message,
                         onDismiss: controller.clearNotice,
-                        actionLabel: controller.selectedPage != 1 ? '查看任务' : null,
+                        actionLabel: controller.selectedPage != 1
+                            ? '查看任务'
+                            : null,
                         onAction: () => controller.selectPage(1),
                       ),
                     Expanded(
@@ -94,7 +94,9 @@ class AppShell extends StatelessWidget {
                             VerticalDivider(
                               width: 1,
                               color: isDark
-                                  ? const Color(0xff1e293b).withValues(alpha: 0.6)
+                                  ? const Color(
+                                      0xff1e293b,
+                                    ).withValues(alpha: 0.6)
                                   : const Color(0xffe2e8f0),
                             ),
                           Expanded(
@@ -120,7 +122,8 @@ class AppShell extends StatelessWidget {
                       ),
                     ),
             ),
-            if (!controller.isInitializing && !controller.settings.hasCompletedFirstSetup)
+            if (!controller.isInitializing &&
+                !controller.settings.hasCompletedFirstSetup)
               _FirstLaunchNamingOverlay(controller: controller),
             if (controller.pendingOffer case final TransferOffer offer)
               _OfferOverlay(controller: controller, offer: offer),
@@ -193,13 +196,15 @@ class _FloatingGlassNavBar extends StatelessWidget {
       height: 64,
       padding: const EdgeInsets.symmetric(horizontal: 8, vertical: 6),
       decoration: BoxDecoration(
-        color: tokens?.cardBg ??
+        color:
+            tokens?.cardBg ??
             (isDark
                 ? const Color(0xff131c2e).withValues(alpha: 0.8)
                 : Colors.white.withValues(alpha: 0.85)),
         borderRadius: BorderRadius.circular(radius > 16 ? radius : 28),
         border: Border.all(
-          color: tokens?.cardBorder ??
+          color:
+              tokens?.cardBorder ??
               (isDark
                   ? const Color(0xff2d3b59).withValues(alpha: 0.6)
                   : const Color(0xffe2e8f0)),
@@ -270,8 +275,9 @@ class _FloatingGlassNavBar extends StatelessWidget {
                       item.$2,
                       style: TextStyle(
                         fontSize: 11,
-                        fontWeight:
-                            isSelected ? FontWeight.w600 : FontWeight.w500,
+                        fontWeight: isSelected
+                            ? FontWeight.w600
+                            : FontWeight.w500,
                         color: isSelected
                             ? colors.primary
                             : colors.onSurfaceVariant,
@@ -337,10 +343,10 @@ class _DesktopNavigation extends StatelessWidget {
                     Text(
                       '互传',
                       style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                            fontWeight: FontWeight.w800,
-                            letterSpacing: -0.4,
-                            fontSize: 16,
-                          ),
+                        fontWeight: FontWeight.w800,
+                        letterSpacing: -0.4,
+                        fontSize: 16,
+                      ),
                     ),
                     const SizedBox(height: 1),
                     Text(
@@ -357,12 +363,7 @@ class _DesktopNavigation extends StatelessWidget {
             ),
           ),
           const SizedBox(height: 18),
-          _navItem(
-            context,
-            index: 0,
-            icon: LucideIcons.radio,
-            label: '附近设备',
-          ),
+          _navItem(context, index: 0, icon: LucideIcons.radio, label: '附近设备'),
           const SizedBox(height: 4),
           _navItem(
             context,
@@ -374,19 +375,9 @@ class _DesktopNavigation extends StatelessWidget {
                 : null,
           ),
           const SizedBox(height: 4),
-          _navItem(
-            context,
-            index: 2,
-            icon: LucideIcons.history,
-            label: '历史记录',
-          ),
+          _navItem(context, index: 2, icon: LucideIcons.history, label: '历史记录'),
           const SizedBox(height: 4),
-          _navItem(
-            context,
-            index: 3,
-            icon: LucideIcons.settings,
-            label: '设置',
-          ),
+          _navItem(context, index: 3, icon: LucideIcons.settings, label: '设置'),
           const Spacer(),
           // 底部本机状态卡片（首字母头像 + 设备名 + 在线脉冲）
           Container(
@@ -395,7 +386,9 @@ class _DesktopNavigation extends StatelessWidget {
               color: isDark ? const Color(0xff131c2e) : Colors.white,
               borderRadius: BorderRadius.circular(14),
               border: Border.all(
-                color: isDark ? const Color(0xff1e2a44) : const Color(0xffe2e8f0),
+                color: isDark
+                    ? const Color(0xff1e2a44)
+                    : const Color(0xffe2e8f0),
               ),
               boxShadow: [
                 BoxShadow(
@@ -523,7 +516,10 @@ class _DesktopNavigation extends StatelessWidget {
               ),
               if (badge != null)
                 Container(
-                  padding: const EdgeInsets.symmetric(horizontal: 6, vertical: 2),
+                  padding: const EdgeInsets.symmetric(
+                    horizontal: 6,
+                    vertical: 2,
+                  ),
                   decoration: BoxDecoration(
                     color: colors.primary,
                     borderRadius: BorderRadius.circular(10),
@@ -600,9 +596,8 @@ class _OfferOverlayState extends State<_OfferOverlay> {
                         widget.offer.direction == TransferDirection.outgoing
                             ? '与「${widget.offer.peerName}」核对安全码'
                             : '接收「${widget.offer.peerName}」的文件',
-                        style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                              fontWeight: FontWeight.w700,
-                            ),
+                        style: Theme.of(context).textTheme.titleMedium
+                            ?.copyWith(fontWeight: FontWeight.w700),
                         textAlign: TextAlign.center,
                       ),
                       const SizedBox(height: 6),
@@ -666,7 +661,10 @@ class _OfferOverlayState extends State<_OfferOverlay> {
                         borderRadius: BorderRadius.circular(8),
                         onTap: () => setState(() => _trust = !_trust),
                         child: Padding(
-                          padding: const EdgeInsets.symmetric(vertical: 6, horizontal: 4),
+                          padding: const EdgeInsets.symmetric(
+                            vertical: 6,
+                            horizontal: 4,
+                          ),
                           child: Row(
                             children: [
                               SizedBox(
@@ -674,7 +672,8 @@ class _OfferOverlayState extends State<_OfferOverlay> {
                                 height: 24,
                                 child: Checkbox(
                                   value: _trust,
-                                  onChanged: (v) => setState(() => _trust = v ?? false),
+                                  onChanged: (v) =>
+                                      setState(() => _trust = v ?? false),
                                 ),
                               ),
                               const SizedBox(width: 8),
@@ -698,7 +697,8 @@ class _OfferOverlayState extends State<_OfferOverlay> {
                                 rememberPeer: false,
                               ),
                               child: Text(
-                                widget.offer.direction == TransferDirection.outgoing
+                                widget.offer.direction ==
+                                        TransferDirection.outgoing
                                     ? '不匹配'
                                     : '拒绝',
                               ),
@@ -713,7 +713,8 @@ class _OfferOverlayState extends State<_OfferOverlay> {
                               ),
                               icon: const Icon(LucideIcons.check, size: 18),
                               label: Text(
-                                widget.offer.direction == TransferDirection.outgoing
+                                widget.offer.direction ==
+                                        TransferDirection.outgoing
                                     ? '一致，继续'
                                     : '接收',
                               ),
@@ -820,10 +821,7 @@ class _FirstLaunchNamingOverlayState extends State<_FirstLaunchNamingOverlay> {
                             gradient: LinearGradient(
                               begin: Alignment.topLeft,
                               end: Alignment.bottomRight,
-                              colors: [
-                                colors.primary,
-                                colors.secondary,
-                              ],
+                              colors: [colors.primary, colors.secondary],
                             ),
                             shape: BoxShape.circle,
                             boxShadow: [

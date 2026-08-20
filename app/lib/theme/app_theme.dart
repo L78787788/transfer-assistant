@@ -159,12 +159,20 @@ class AppTheme {
       brightness: isDark ? Brightness.dark : Brightness.light,
       primary: primary,
       onPrimary: Colors.white,
-      primaryContainer: isDark ? const Color(0xff0369a1) : const Color(0xffe0f2fe),
-      onPrimaryContainer: isDark ? const Color(0xffe0f2fe) : const Color(0xff0369a1),
+      primaryContainer: isDark
+          ? const Color(0xff0369a1)
+          : const Color(0xffe0f2fe),
+      onPrimaryContainer: isDark
+          ? const Color(0xffe0f2fe)
+          : const Color(0xff0369a1),
       secondary: accent,
       onSecondary: Colors.white,
-      secondaryContainer: isDark ? const Color(0xff155e75) : const Color(0xffcffafe),
-      onSecondaryContainer: isDark ? const Color(0xffcffafe) : const Color(0xff155e75),
+      secondaryContainer: isDark
+          ? const Color(0xff155e75)
+          : const Color(0xffcffafe),
+      onSecondaryContainer: isDark
+          ? const Color(0xffcffafe)
+          : const Color(0xff155e75),
       error: error,
       onError: Colors.white,
       surface: surface,
@@ -228,10 +236,7 @@ class AppTheme {
         'sans-serif',
       ],
       extensions: [tokens],
-      dividerTheme: DividerThemeData(
-        color: border,
-        thickness: 1,
-      ),
+      dividerTheme: DividerThemeData(color: border, thickness: 1),
       chipTheme: ChipThemeData(
         labelStyle: TextStyle(
           fontSize: 12,

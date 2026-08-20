@@ -38,7 +38,9 @@ class BrandDualArrowIcon extends StatelessWidget {
       width: size,
       height: size,
       child: CustomPaint(
-        painter: _DualArrowPainter(color: withBackground ? Colors.white : primary),
+        painter: _DualArrowPainter(
+          color: withBackground ? Colors.white : primary,
+        ),
       ),
     );
 
@@ -46,7 +48,8 @@ class BrandDualArrowIcon extends StatelessWidget {
       return arrowSvg;
     }
 
-    final bgGradient = gradient ??
+    final bgGradient =
+        gradient ??
         LinearGradient(
           colors: [AppTheme.brand400, AppTheme.brand600],
           begin: Alignment.topLeft,
@@ -99,7 +102,11 @@ class _DualArrowPainter extends CustomPainter {
     final headSize = w * 0.22;
 
     // 绘制上箭头水平轴线
-    canvas.drawLine(Offset(topStartX, topY), Offset(topEndX, topY), strokePaint);
+    canvas.drawLine(
+      Offset(topStartX, topY),
+      Offset(topEndX, topY),
+      strokePaint,
+    );
     // 绘制上箭头尖头
     final topPath = Path()
       ..moveTo(topEndX - headSize, topY - headSize * 0.8)
@@ -113,7 +120,11 @@ class _DualArrowPainter extends CustomPainter {
     final bottomEndX = w * 0.15;
 
     // 绘制下箭头水平轴线
-    canvas.drawLine(Offset(bottomStartX, bottomY), Offset(bottomEndX, bottomY), strokePaint);
+    canvas.drawLine(
+      Offset(bottomStartX, bottomY),
+      Offset(bottomEndX, bottomY),
+      strokePaint,
+    );
     // 绘制下箭头尖头
     final bottomPath = Path()
       ..moveTo(bottomEndX + headSize, bottomY - headSize * 0.8)
@@ -158,12 +169,14 @@ class GlassCard extends StatelessWidget {
     final radius = borderRadius ?? tokens?.cardRadius ?? 14;
     final isDark = Theme.of(context).brightness == Brightness.dark;
 
-    final defaultBg = tokens?.cardBg ??
-        (isDark ? const Color(0xff131c2e) : Colors.white);
-    final defaultBorder = tokens?.cardBorder ??
+    final defaultBg =
+        tokens?.cardBg ?? (isDark ? const Color(0xff131c2e) : Colors.white);
+    final defaultBorder =
+        tokens?.cardBorder ??
         (isDark ? const Color(0xff1e2a44) : const Color(0xffe2e8f0));
 
-    final shadows = tokens?.shadowMd ??
+    final shadows =
+        tokens?.shadowMd ??
         [
           BoxShadow(
             color: const Color(0x0f0f172a),
@@ -225,7 +238,11 @@ class StatusLabel extends StatelessWidget {
       TransferState.connecting => ('连接中', AppTheme.brand500, 0.14),
       TransferState.pairing => ('安全配对中', AppTheme.accent, 0.15),
       TransferState.waitingForAcceptance => ('等待接收', AppTheme.accent, 0.15),
-      TransferState.transferring => ('传输中', isDark ? AppTheme.brand400 : AppTheme.brand600, 0.16),
+      TransferState.transferring => (
+        '传输中',
+        isDark ? AppTheme.brand400 : AppTheme.brand600,
+        0.16,
+      ),
       TransferState.paused => ('已暂停', AppTheme.warning, 0.14),
       TransferState.interrupted => ('已中断', AppTheme.error, 0.14),
       TransferState.verifying => ('BLAKE3 校验中', AppTheme.brand500, 0.14),
@@ -250,10 +267,7 @@ class StatusLabel extends StatelessWidget {
           Container(
             width: 6,
             height: 6,
-            decoration: BoxDecoration(
-              color: dotColor,
-              shape: BoxShape.circle,
-            ),
+            decoration: BoxDecoration(color: dotColor, shape: BoxShape.circle),
           ),
           const SizedBox(width: 6),
           Text(
@@ -302,7 +316,9 @@ class EmptyState extends StatelessWidget {
               color: isDark ? const Color(0xff131c2e) : Colors.white,
               borderRadius: BorderRadius.circular(18),
               border: Border.all(
-                color: isDark ? const Color(0xff1e2a44) : const Color(0xffe2e8f0),
+                color: isDark
+                    ? const Color(0xff1e2a44)
+                    : const Color(0xffe2e8f0),
                 width: 1.2,
               ),
               boxShadow: [
@@ -353,10 +369,10 @@ class EmptyState extends StatelessWidget {
                 Text(
                   title,
                   style: Theme.of(context).textTheme.titleMedium?.copyWith(
-                        fontWeight: FontWeight.w800,
-                        letterSpacing: -0.3,
-                        fontSize: 16,
-                      ),
+                    fontWeight: FontWeight.w800,
+                    letterSpacing: -0.3,
+                    fontSize: 16,
+                  ),
                   textAlign: TextAlign.center,
                 ),
                 if (description != null) ...[
@@ -426,7 +442,8 @@ class _LiquidProgressBarState extends State<LiquidProgressBar>
   @override
   Widget build(BuildContext context) {
     final isDark = Theme.of(context).brightness == Brightness.dark;
-    final bg = widget.backgroundColor ??
+    final bg =
+        widget.backgroundColor ??
         (isDark ? const Color(0xff16213a) : const Color(0xffe2e8f0));
 
     final clampedProgress = widget.progress.clamp(0.0, 1.0);
@@ -457,7 +474,9 @@ class _LiquidProgressBarState extends State<LiquidProgressBar>
                     AnimatedBuilder(
                       animation: _sweepController,
                       builder: (context, child) {
-                        final sweepX = -fillWidth + (fillWidth * 2) * _sweepController.value;
+                        final sweepX =
+                            -fillWidth +
+                            (fillWidth * 2) * _sweepController.value;
                         return Positioned(
                           left: sweepX,
                           top: 0,
@@ -549,10 +568,14 @@ class PairingCodeDialog extends StatelessWidget {
             Container(
               padding: const EdgeInsets.symmetric(horizontal: 24, vertical: 14),
               decoration: BoxDecoration(
-                color: isDark ? const Color(0xff0b1120) : const Color(0xfff1f5f9),
+                color: isDark
+                    ? const Color(0xff0b1120)
+                    : const Color(0xfff1f5f9),
                 borderRadius: BorderRadius.circular(12),
                 border: Border.all(
-                  color: isDark ? const Color(0xff1e2a44) : const Color(0xffe2e8f0),
+                  color: isDark
+                      ? const Color(0xff1e2a44)
+                      : const Color(0xffe2e8f0),
                 ),
               ),
               child: Text(
@@ -586,7 +609,9 @@ class PairingCodeDialog extends StatelessWidget {
                   child: FilledButton(
                     onPressed: onAccept,
                     style: FilledButton.styleFrom(
-                      backgroundColor: isDark ? AppTheme.brand400 : AppTheme.brand600,
+                      backgroundColor: isDark
+                          ? AppTheme.brand400
+                          : AppTheme.brand600,
                       foregroundColor: Colors.white,
                       padding: const EdgeInsets.symmetric(vertical: 12),
                       shape: RoundedRectangleBorder(
@@ -635,12 +660,19 @@ class ErrorBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(LucideIcons.circleAlert, size: 18, color: colors.onErrorContainer),
+          Icon(
+            LucideIcons.circleAlert,
+            size: 18,
+            color: colors.onErrorContainer,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
               message,
-              style: TextStyle(color: colors.onErrorContainer, fontWeight: FontWeight.w500),
+              style: TextStyle(
+                color: colors.onErrorContainer,
+                fontWeight: FontWeight.w500,
+              ),
             ),
           ),
           IconButton(
@@ -689,7 +721,11 @@ class NoticeBanner extends StatelessWidget {
       ),
       child: Row(
         children: [
-          Icon(LucideIcons.sparkles, size: 18, color: colors.onPrimaryContainer),
+          Icon(
+            LucideIcons.sparkles,
+            size: 18,
+            color: colors.onPrimaryContainer,
+          ),
           const SizedBox(width: 10),
           Expanded(
             child: Text(
@@ -701,10 +737,7 @@ class NoticeBanner extends StatelessWidget {
             ),
           ),
           if (actionLabel != null && onAction != null)
-            TextButton(
-              onPressed: onAction,
-              child: Text(actionLabel!),
-            ),
+            TextButton(onPressed: onAction, child: Text(actionLabel!)),
           IconButton(
             onPressed: onDismiss,
             tooltip: '关闭',
@@ -733,9 +766,9 @@ class PageHeader extends StatelessWidget {
             child: Text(
               title,
               style: Theme.of(context).textTheme.headlineSmall?.copyWith(
-                    fontWeight: FontWeight.w800,
-                    letterSpacing: -0.5,
-                  ),
+                fontWeight: FontWeight.w800,
+                letterSpacing: -0.5,
+              ),
             ),
           ),
           ...actions,
@@ -912,18 +945,18 @@ class SettingsSectionCard extends StatelessWidget {
                     Text(
                       title,
                       style: Theme.of(context).textTheme.titleSmall?.copyWith(
-                            fontWeight: FontWeight.w700,
-                            letterSpacing: -0.2,
-                          ),
+                        fontWeight: FontWeight.w700,
+                        letterSpacing: -0.2,
+                      ),
                     ),
                     if (subtitle != null) ...[
                       const SizedBox(height: 2),
                       Text(
                         subtitle!,
                         style: Theme.of(context).textTheme.bodySmall?.copyWith(
-                              color: colors.onSurfaceVariant,
-                              fontSize: 11,
-                            ),
+                          color: colors.onSurfaceVariant,
+                          fontSize: 11,
+                        ),
                       ),
                     ],
                   ],
@@ -950,4 +983,3 @@ String formatBytes(int bytes) {
   final digits = value >= 100 || unit == 0 ? 0 : 1;
   return '${value.toStringAsFixed(digits)} ${units[unit]}';
 }
-

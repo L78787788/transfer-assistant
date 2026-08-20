@@ -194,7 +194,9 @@ void main() {
     await tester.settleFast();
   });
 
-  testWidgets('chat theme shows device list and opens chat session', (tester) async {
+  testWidgets('chat theme shows device list and opens chat session', (
+    tester,
+  ) async {
     final core = _FakeCore();
     final controller = AppController(
       core: core,
@@ -227,32 +229,33 @@ void main() {
     expect(find.text('传输会话'), findsOneWidget);
   });
 
-  testWidgets('first launch shows device naming overlay and dismisses on submit', (
-    tester,
-  ) async {
-    final core = _FakeCore()..forceFirstSetup = false;
-    final controller = AppController(
-      core: core,
-      platform: const _FakePlatform(),
-      initialSettings: const AppSettings(
-        deviceName: '我的新设备',
-        receiveDirectory: 'C:/test/downloads',
-        hasCompletedFirstSetup: false,
-      ),
-    );
+  testWidgets(
+    'first launch shows device naming overlay and dismisses on submit',
+    (tester) async {
+      final core = _FakeCore()..forceFirstSetup = false;
+      final controller = AppController(
+        core: core,
+        platform: const _FakePlatform(),
+        initialSettings: const AppSettings(
+          deviceName: '我的新设备',
+          receiveDirectory: 'C:/test/downloads',
+          hasCompletedFirstSetup: false,
+        ),
+      );
 
-    await tester.pumpWidget(TransferAssistantApp(controller: controller));
-    await tester.settleFast();
+      await tester.pumpWidget(TransferAssistantApp(controller: controller));
+      await tester.settleFast();
 
-    expect(find.text('欢迎使用互传'), findsOneWidget);
-    expect(find.text('完成并开启极速传输'), findsOneWidget);
+      expect(find.text('欢迎使用互传'), findsOneWidget);
+      expect(find.text('完成并开启极速传输'), findsOneWidget);
 
-    await tester.tap(find.text('完成并开启极速传输'));
-    await tester.settleFast();
+      await tester.tap(find.text('完成并开启极速传输'));
+      await tester.settleFast();
 
-    expect(controller.settings.hasCompletedFirstSetup, isTrue);
-    expect(find.text('欢迎使用互传'), findsNothing);
-  });
+      expect(controller.settings.hasCompletedFirstSetup, isTrue);
+      expect(find.text('欢迎使用互传'), findsNothing);
+    },
+  );
 }
 
 class _FakePlatform extends PlatformBridge {
@@ -288,9 +291,7 @@ class _FakeCore implements TransferCoreClient {
   }) async {
     controller.add(
       CoreSettingsLoaded(
-        settings.copyWith(
-          hasCompletedFirstSetup: forceFirstSetup ?? true,
-        ),
+        settings.copyWith(hasCompletedFirstSetup: forceFirstSetup ?? true),
       ),
     );
     controller.add(const CoreReady());
@@ -361,7 +362,8 @@ class _FakeCore implements TransferCoreClient {
         ];
 
   @override
-  Future<List<TransferItem>> listTransferItems(String transferId) async => const [];
+  Future<List<TransferItem>> listTransferItems(String transferId) async =>
+      const [];
 
   @override
   Future<int> clearHistory() async {

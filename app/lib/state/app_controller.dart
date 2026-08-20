@@ -30,7 +30,8 @@ class AppController extends ChangeNotifier {
   String? noticeMessage;
   Timer? _noticeTimer;
   final Set<String> _knownTransferIds = <String>{};
-  final Map<String, TransferState> _knownTransferStates = <String, TransferState>{};
+  final Map<String, TransferState> _knownTransferStates =
+      <String, TransferState>{};
 
   List<PeerSummary> peers = const [];
   List<TransferSnapshot> transfers = const [];
@@ -99,7 +100,9 @@ class AppController extends ChangeNotifier {
       final sources = <SourceHandle>[];
       for (final p in payload.paths) {
         final name = p.split('/').last;
-        sources.add(SourceHandle(token: p, displayName: name.isNotEmpty ? name : '分享文件'));
+        sources.add(
+          SourceHandle(token: p, displayName: name.isNotEmpty ? name : '分享文件'),
+        );
       }
       sharedFileSources = sources;
       selectedPage = 0; // 切换到附近设备页
@@ -163,7 +166,10 @@ class AppController extends ChangeNotifier {
     }
   }
 
-  Future<void> sendSourcesToPeer(PeerSummary peer, List<SourceHandle> sources) async {
+  Future<void> sendSourcesToPeer(
+    PeerSummary peer,
+    List<SourceHandle> sources,
+  ) async {
     try {
       if (sources.isEmpty) return;
       await core.send(peer.id, sources);
@@ -210,11 +216,13 @@ class AppController extends ChangeNotifier {
       if (previous.backgroundReceive != next.backgroundReceive) {
         unawaited(platform.setBackgroundReceive(next.backgroundReceive));
       }
-      unawaited(core.updateSettings(next).catchError((error) {
-        settings = previous;
-        errorMessage = '保存设置失败：$error';
-        notifyListeners();
-      }));
+      unawaited(
+        core.updateSettings(next).catchError((error) {
+          settings = previous;
+          errorMessage = '保存设置失败：$error';
+          notifyListeners();
+        }),
+      );
     } catch (error) {
       settings = previous;
       errorMessage = '保存设置失败：$error';
@@ -264,7 +272,8 @@ class AppController extends ChangeNotifier {
 
   Future<void> checkNotificationPermission() async {
     try {
-      isNotificationPermissionGranted = await platform.checkNotificationPermission();
+      isNotificationPermissionGranted = await platform
+          .checkNotificationPermission();
       notifyListeners();
     } catch (_) {}
   }
@@ -317,18 +326,12 @@ class AppController extends ChangeNotifier {
   Future<void> locateHistoryFile(HistoryFileItem item) async {
     final path = item.localPath;
     if (path != null && path.isNotEmpty) {
-      await platform.openDirectory(
-        settings.receiveDirectory,
-        selectFile: path,
-      );
+      await platform.openDirectory(settings.receiveDirectory, selectFile: path);
     } else {
       await platform.openDirectory(settings.receiveDirectory);
     }
     if (Platform.isAndroid || Platform.isIOS) {
-      showNotice(
-        '正在打开文件管理...',
-        duration: const Duration(seconds: 2),
-      );
+      showNotice('正在打开文件管理...', duration: const Duration(seconds: 2));
     }
   }
 
@@ -424,8 +427,9 @@ class AppController extends ChangeNotifier {
         isRefreshing = false;
       case TransfersChanged(:final transfers):
         final previousIds = Set<String>.from(_knownTransferIds);
-        final previousStates =
-            Map<String, TransferState>.from(_knownTransferStates);
+        final previousStates = Map<String, TransferState>.from(
+          _knownTransferStates,
+        );
         var anyCompleted = false;
 
         this.transfers = transfers;
@@ -469,7 +473,8 @@ class AppController extends ChangeNotifier {
               unawaited(
                 platform.showNotification(
                   title: '文件接收完成',
-                  body: '已接收来自「${transfer.peerName}」的 ${transfer.itemCount} 项文件',
+                  body:
+                      '已接收来自「${transfer.peerName}」的 ${transfer.itemCount} 项文件',
                 ),
               );
             }
@@ -495,11 +500,15 @@ class AppController extends ChangeNotifier {
           unawaited(loadHistoryFiles());
         }
 
-        final activeList = transfers.where((t) => t.isActive).toList(growable: false);
+        final activeList = transfers
+            .where((t) => t.isActive)
+            .toList(growable: false);
         if (activeList.isNotEmpty) {
           final primary = activeList.first;
           final percent = primary.totalBytes > 0
-              ? ((primary.completedBytes / primary.totalBytes) * 100).toInt().clamp(0, 100)
+              ? ((primary.completedBytes / primary.totalBytes) * 100)
+                    .toInt()
+                    .clamp(0, 100)
               : 0;
           final speedStr = '${formatBytes(primary.bytesPerSecond)}/s';
           unawaited(
@@ -521,17 +530,14 @@ class AppController extends ChangeNotifier {
           );
         }
 
-        unawaited(
-          platform.setTransferActive(
-            activeList.isNotEmpty,
-          ),
-        );
+        unawaited(platform.setTransferActive(activeList.isNotEmpty));
       case IncomingOffer(:final offer):
         pendingOffer = offer;
         unawaited(
           platform.showNotification(
             title: '收到传输请求',
-            body: '「${offer.peerName}」请求向您发送 ${offer.itemCount} 项文件 (${formatBytes(offer.totalBytes)})',
+            body:
+                '「${offer.peerName}」请求向您发送 ${offer.itemCount} 项文件 (${formatBytes(offer.totalBytes)})',
           ),
         );
       case CoreFailure(:final message):
