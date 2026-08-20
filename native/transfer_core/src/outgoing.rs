@@ -708,10 +708,19 @@ pub(crate) async fn run_outgoing(
             .await
         }));
     }
+    struct DataTasksGuard(Vec<tokio::task::JoinHandle<Result<(), LanError>>>);
+    impl Drop for DataTasksGuard {
+        fn drop(&mut self) {
+            for task in &self.0 {
+                task.abort();
+            }
+        }
+    }
+    let mut tasks_guard = DataTasksGuard(tasks);
     let mut control_rx = control.register_channel();
     let data_tasks_future = async {
-        for task in tasks {
-            task.await??;
+        for task in &mut tasks_guard.0 {
+            (&mut *task).await??;
         }
         Ok::<(), LanError>(())
     };

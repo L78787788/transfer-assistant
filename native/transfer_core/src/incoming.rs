@@ -148,9 +148,6 @@ where
                 if context.control.is_cancelled() || inner.transfer_is_cancelled(transfer_id) {
                     return Err(LanError::Cancelled);
                 }
-                if context.remaining_chunks.load(Ordering::Acquire) > 0 {
-                    return Err(LanError::IncompleteDataChannel(channel_index));
-                }
                 // 对端该通道工作窃取任务发送完毕或关闭
                 break;
             }
