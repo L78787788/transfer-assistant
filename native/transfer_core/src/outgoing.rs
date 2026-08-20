@@ -567,10 +567,24 @@ pub(crate) fn delete_partial_data(
             continue;
         }
         let path = PathBuf::from(temporary);
-        match fs::remove_file(path) {
-            Ok(()) => {}
-            Err(error) if error.kind() == std::io::ErrorKind::NotFound => {}
-            Err(error) => return Err(error.into()),
+        let mut deleted = false;
+        for _ in 0..10 {
+            match fs::remove_file(&path) {
+                Ok(()) => {
+                    deleted = true;
+                    break;
+                }
+                Err(error) if error.kind() == std::io::ErrorKind::NotFound => {
+                    deleted = true;
+                    break;
+                }
+                Err(_) => {
+                    std::thread::sleep(std::time::Duration::from_millis(20));
+                }
+            }
+        }
+        if !deleted && path.exists() {
+            let _ = fs::remove_file(&path);
         }
     }
     repository.clear_completed_chunks(transfer_id)?;
