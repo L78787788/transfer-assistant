@@ -89,7 +89,7 @@ impl MdnsHandle {
             (
                 "name".to_owned(),
                 if config.device_name.trim().is_empty() {
-                    "传输助手".to_owned()
+                    "互传".to_owned()
                 } else {
                     config.device_name
                 },
@@ -107,7 +107,7 @@ impl MdnsHandle {
         let announcement_name = properties
             .get("name")
             .cloned()
-            .unwrap_or_else(|| "传输助手".to_owned());
+            .unwrap_or_else(|| "互传".to_owned());
         let announcement_kind = properties
             .get("kind")
             .cloned()

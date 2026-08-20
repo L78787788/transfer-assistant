@@ -1,4 +1,4 @@
-﻿# Transfer Assistant
+﻿# HuChuan (Transfer Assistant)
 
 <p align="center">
   <strong>Ultra-fast, Zero-Cloud, Native Cross-Platform LAN File Transfer for Windows 10/11 x64 & Android 9+ arm64</strong>
@@ -26,9 +26,9 @@
 
 ## 📖 Introduction
 
-**Transfer Assistant** is a modern, high-performance, and secure cross-platform local area network (LAN) file transfer application.
+**HuChuan (Transfer Assistant)** is a modern, high-performance, and secure cross-platform local area network (LAN) file transfer application.
 
-It completely eliminates reliance on external cloud servers, internet relays, third-party accounts, or telemetry. Leveraging local **mDNS zero-configuration discovery** and **TLS 1.3 mutual certificate encryption (mTLS)**, Transfer Assistant achieves lightning-fast discovery and saturated physical line-rate throughput (100+ MB/s) between **Windows PCs** and **Android phones/tablets**.
+It completely eliminates reliance on external cloud servers, internet relays, third-party accounts, or telemetry. Leveraging local **mDNS zero-configuration discovery** and **TLS 1.3 mutual certificate encryption (mTLS)**, HuChuan achieves lightning-fast discovery and saturated physical line-rate throughput (100+ MB/s) between **Windows PCs** and **Android phones/tablets**.
 
 ### 🌟 Key Highlights
 
@@ -36,7 +36,7 @@ It completely eliminates reliance on external cloud servers, internet relays, th
 - 🚀 **True Zero-Copy Architecture**: The native Rust core streams binary bytes directly between the OS filesystem and network sockets, bypassing Dart and Java VM heap memories completely to prevent garbage collection pauses and out-of-memory errors.
 - 🛡️ **Financial-Grade Security (mTLS 1.3)**: Built with Ed25519 hardware credentials and mutual TLS 1.3 certificate verification. First-time pairings generate an identical deterministic **6-digit symmetric pairing code** on both screens to eliminate eavesdropping and Man-in-the-Middle (MITM) attacks.
 - 🔄 **Rock-Solid Resumption**: 4 MiB chunking with BLAKE3 per-chunk hash verification. In the event of network disruption, Wi-Fi switching, or application restarts, the SQLite WAL bitmap engine ensures that **only missing chunks are transferred**.
-- 💻 **Deep Windows Integration**: Full window drag-and-drop distribution, system tray minimization with live transfer rate tooltips, Windows Explorer context menu ("Send with Transfer Assistant"), and automatic dedicated private network firewall rule management.
+- 💻 **Deep Windows Integration**: Full window drag-and-drop distribution, system tray minimization with live transfer rate tooltips, Windows Explorer context menu ("Send with HuChuan"), and automatic dedicated private network firewall rule management.
 - 📱 **Deep Android Integration**: Fully adapted for Android 9~15. Safely transfers Storage Access Framework (SAF) File Descriptor (FD) ownership to the native Rust engine. Employs foreground services, persistent progress notifications, Wi-Fi high-performance locks, and MulticastLocks for resilient background operations.
 - 📋 **Instant Notes & Manual Direct IP**: Real-time cross-device note/clipboard sharing. When multicast is restricted by enterprise routers, direct connections via `IP:Port` or portable Wi-Fi Hotspots are fully supported.
 
@@ -82,7 +82,7 @@ a6ee6cd61b30dbea8ff8267a6a63556471f518d9c1b29fc4fb61c696c6facc00  transfer-assis
 ### Scenario 1: Automatic Discovery & Cross-Device Transfer
 
 1. **Connect to the same network**: Connect both devices to the same Wi-Fi network or mobile hotspot.
-2. **Launch Application**: Open Transfer Assistant on both devices. mDNS will discover peers automatically.
+2. **Launch Application**: Open HuChuan on both devices. mDNS will discover peers automatically.
 3. **Initiate Transfer**:
    - Click on the discovered target peer card;
    - Tap "Send Files" or "Send Folder", or drag files directly into the Windows app window.
@@ -95,7 +95,7 @@ a6ee6cd61b30dbea8ff8267a6a63556471f518d9c1b29fc4fb61c696c6facc00  transfer-assis
 ┌──────────────┐                               ┌──────────────┐
 │  Windows PC  │ ──── mDNS Zero-Config LAN ───► │ Android Phone│
 │              │ ◄─── TLS 1.3 Mutual Auth ────► │              │
-│ [TransferCore]│ ──── 4 Parallel Channels ────► │ [TransferCore]│
+│   [HuChuan]  │ ──── 4 Parallel Channels ────► │   [HuChuan]  │
 └──────────────┘                               └──────────────┘
 ```
 
@@ -121,7 +121,7 @@ When router multicast is disabled:
 ### Scenario 4: Windows Explorer Context Menu
 
 1. Enable **"Windows Explorer Context Menu"** in Settings;
-2. Right-click any file or folder in Windows Explorer and select **"Send with Transfer Assistant"**;
+2. Right-click any file or folder in Windows Explorer and select **"Send with HuChuan"**;
 3. Choose the target device to dispatch immediately.
 
 ---
