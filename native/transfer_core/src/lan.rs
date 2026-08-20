@@ -427,6 +427,9 @@ where
                     if context.remaining_chunks.load(Ordering::Acquire) == 0 {
                         break;
                     }
+                    if context.active_channels.load(Ordering::Acquire) == 0 {
+                        return Err(LanError::IncompleteTransfer("数据通道已中断".to_owned()));
+                    }
                 }
                 () = inner.shutdown.cancelled() => return Err(LanError::Stopped),
             }
@@ -589,6 +592,7 @@ impl LanError {
                 | Self::RemoteTransferFailed(_)
                 | Self::SourceChanged(_)
                 | Self::IncompleteDataChannel(_)
+                | Self::IncompleteTransfer(_)
         )
     }
 }

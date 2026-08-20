@@ -45,6 +45,7 @@ pub(crate) struct IncomingContext {
     pub(crate) directories: Vec<PathBuf>,
     pub(crate) temporary_root: PathBuf,
     pub(crate) remaining_chunks: AtomicU64,
+    pub(crate) active_channels: AtomicU32,
     pub(crate) completed: Notify,
     pub(crate) repository: Arc<crate::persistence::TransferRepository>,
     pub(crate) control: Arc<crate::outgoing::JobControl>,
@@ -78,7 +79,8 @@ impl IncomingContext {
         self.token.lock().map(|token| *token).unwrap_or_default()
     }
 
-    pub(crate) fn configure_channels(&self, _channel_count: u32) -> Result<(), LanError> {
+    pub(crate) fn configure_channels(&self, channel_count: u32) -> Result<(), LanError> {
+        self.active_channels.store(channel_count, Ordering::Release);
         Ok(())
     }
 
@@ -135,6 +137,15 @@ where
         return Err(LanError::InvalidTransferToken);
     }
     context.validate_channel(channel_index)?;
+    struct ChannelGuard(Arc<IncomingContext>);
+    impl Drop for ChannelGuard {
+        fn drop(&mut self) {
+            if self.0.active_channels.fetch_sub(1, Ordering::AcqRel) == 1 {
+                self.0.completed.notify_waiters();
+            }
+        }
+    }
+    let _channel_guard = ChannelGuard(context.clone());
     loop {
         context.control.checkpoint(&inner).await?;
         let header = match read_header(tls).await {
@@ -385,6 +396,7 @@ pub(crate) fn prepare_incoming(
         directories,
         temporary_root,
         remaining_chunks: AtomicU64::new(remaining_chunks),
+        active_channels: AtomicU32::new(0),
         completed: Notify::new(),
         repository: inner.repository.clone(),
         control: Arc::new(crate::outgoing::JobControl::new()),
@@ -503,6 +515,7 @@ fn prepare_incoming_android(
         directories: Vec::new(),
         temporary_root: PathBuf::new(),
         remaining_chunks: AtomicU64::new(remaining_chunks),
+        active_channels: AtomicU32::new(0),
         completed: Notify::new(),
         repository: inner.repository.clone(),
         control: Arc::new(crate::outgoing::JobControl::new()),
