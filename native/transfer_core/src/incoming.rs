@@ -79,8 +79,7 @@ impl IncomingContext {
         self.token.lock().map(|token| *token).unwrap_or_default()
     }
 
-    pub(crate) fn configure_channels(&self, channel_count: u32) -> Result<(), LanError> {
-        self.active_channels.store(channel_count, Ordering::Release);
+    pub(crate) fn configure_channels(&self, _channel_count: u32) -> Result<(), LanError> {
         Ok(())
     }
 
@@ -137,10 +136,11 @@ where
         return Err(LanError::InvalidTransferToken);
     }
     context.validate_channel(channel_index)?;
+    context.active_channels.fetch_add(1, Ordering::SeqCst);
     struct ChannelGuard(Arc<IncomingContext>);
     impl Drop for ChannelGuard {
         fn drop(&mut self) {
-            if self.0.active_channels.fetch_sub(1, Ordering::AcqRel) == 1 {
+            if self.0.active_channels.fetch_sub(1, Ordering::SeqCst) == 1 {
                 self.0.completed.notify_waiters();
             }
         }
